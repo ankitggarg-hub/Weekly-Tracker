@@ -231,26 +231,59 @@ function adminHome(){const weeks=[];for(let i=-12;i<=1;i++)weeks.push(addW(CUR,i
  <div class="card"><div class="row"><b>Week:</b><select onchange="ow=this.value;render()">${weeks.map(w=>`<option value="${w}" ${w===ow?'selected':''}>${fmt(w)}${w===CUR?' (This week)':w===LAST?' (Last week)':''}</option>`).join('')}</select><span class="mut">Unlock lets the head edit plan and actual for that section-week. Lock it again when done. Hours shown as Acad / Training.</span></div>
  <div class="tw"><table><tr><th>Section</th><th>Head</th><th>Planned</th><th>Actual</th><th>Status</th><th>Remark</th><th>Access</th></tr>${rows||'<tr><td colspan=7 class="mut">No sections yet. Add them in Section Mapping.</td></tr>'}</table></div></div>`}
 async function toggleUnlock(id){const k=K(id,ow);if(S.unlocks[k])delete S.unlocks[k];else S.unlocks[k]=true;await save();render()}
+let edIt='',edSec='',edUsr='';
 function master(kind,label){const inUse=id=>S.sections.some(s=>(kind==='years'?s.yearId:s.courseId)===id);
- return`<div class="card"><div class="row"><input id="mn" placeholder="New ${label} name"><button onclick="addM('${kind}')">Add</button></div><table>${S[kind].map(x=>`<tr><td>${esc(x.name)}</td><td style="width:90px"><button class="dng" onclick="delM('${kind}','${x.id}')">Delete</button></td></tr>`).join('')||'<tr><td class="mut">None yet</td></tr>'}</table></div>`}
+ return`<div class="card"><div class="row"><input id="mn" placeholder="New ${label} name"><button onclick="addM('${kind}')">Add</button></div><table>${S[kind].map(x=>edIt===kind+':'+x.id?
+  `<tr><td><input id="ed_${x.id}" value="${esc(x.name)}" style="width:100%"></td><td style="width:150px"><button onclick="saveEditMaster('${kind}','${x.id}')">Save</button> <button class="sec" onclick="edIt='';render()">Cancel</button></td></tr>`
+  :`<tr><td>${esc(x.name)}</td><td style="width:150px"><button class="sec" onclick="edIt='${kind}:${x.id}';render()">Edit</button> <button class="dng" onclick="delM('${kind}','${x.id}')">Delete</button></td></tr>`).join('')||'<tr><td class="mut">None yet</td></tr>'}</table></div>`}
 async function addM(kind){const n=$('#mn').value.trim();if(!n)return toast('Name is required',1);if(S[kind].some(x=>x.name.toLowerCase()===n.toLowerCase()))return toast('Already exists',1);S[kind].push({id:uid(),name:n});await save();render()}
+async function saveEditMaster(kind,id){const v=$('#ed_'+id).value.trim();if(!v)return toast('Name is required',1);
+ if(S[kind].some(x=>x.id!==id&&x.name.toLowerCase()===v.toLowerCase()))return toast('Already exists',1);
+ S[kind].find(x=>x.id===id).name=v;edIt='';await save();toast('Updated');render()}
 async function delM(kind,id){if(S.sections.some(s=>(kind==='years'?s.yearId:s.courseId)===id))return toast('In use by a section mapping — cannot delete',1);S[kind]=S[kind].filter(x=>x.id!==id);await save();render()}
-function usersV(){return`<div class="card"><div class="row"><input id="un" placeholder="Full name"><input id="uu" placeholder="Username"><input id="up" type="password" placeholder="Password (min 6)"><select id="ur"><option value="head">Dept. Head</option><option value="admin">Admin</option></select><button onclick="addU()">Add user</button></div>
- <div class="tw"><table><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th>New password</th><th></th></tr>${S.users.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${u.role}</td><td><span class="tag ${u.active?'ok':'b'}">${u.active?'Active':'Disabled'}</span></td>
- <td><input type="password" id="pw_${u.id}" placeholder="••••••"> <button class="sec" onclick="setPw('${u.id}')">Set</button></td><td><button class="sec" onclick="togU('${u.id}')">${u.active?'Disable':'Enable'}</button></td></tr>`).join('')}</table></div></div>`}
-async function addU(){const n=$('#un').value.trim(),u=$('#uu').value.trim(),p=$('#up').value;
+function usersV(){const cOpt=(sel)=>`<option value="">Select course…</option>${S.courses.map(c=>`<option value="${c.id}" ${c.id===sel?'selected':''}>${esc(c.name)}</option>`).join('')}`;
+ const addRole=$('#ur')?.value||'head';
+ return`<div class="card"><div class="row"><input id="un" placeholder="Full name"><input id="uu" placeholder="Username"><input id="up" type="password" placeholder="Password (min 6)"><select id="ur" onchange="render()"><option value="head" ${addRole==='head'?'selected':''}>Dept. Head</option><option value="admin" ${addRole==='admin'?'selected':''}>Admin</option></select>${addRole==='head'?`<select id="urc">${cOpt('')}</select>`:''}<button onclick="addU()">Add user</button></div>
+ <div class="mut">A Department Head must be mapped to a course when created. You can change this later using Edit.</div>
+ <div class="tw"><table><tr><th>Name</th><th>Username</th><th>Role</th><th>Course</th><th>Status</th><th>New password</th><th></th></tr>${S.users.map(u=>edUsr===u.id?
+  `<tr><td><input id="eu_n_${u.id}" value="${esc(u.name)}"></td><td><input id="eu_u_${u.id}" value="${esc(u.username)}"></td>
+   <td><select id="eu_r_${u.id}" onchange="render()">${['head','admin'].map(r=>`<option value="${r}" ${r===u.role?'selected':''}>${r==='head'?'Dept. Head':'Admin'}</option>`).join('')}</select></td>
+   <td>${($('#eu_r_'+u.id)?.value||u.role)==='head'?`<select id="eu_c_${u.id}">${cOpt(u.courseId)}</select>`:'<span class="mut">—</span>'}</td>
+   <td colspan="2"><button onclick="saveEditUser('${u.id}')">Save</button> <button class="sec" onclick="edUsr='';render()">Cancel</button></td><td></td></tr>`
+  :`<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${u.role==='head'?'Dept. Head':'Admin'}</td>
+   <td>${u.role==='head'?(u.courseId?esc(nm('courses',u.courseId)):'<span class="tag b">Not mapped</span>'):'<span class="mut">—</span>'}</td>
+   <td><span class="tag ${u.active?'ok':'b'}">${u.active?'Active':'Disabled'}</span></td>
+   <td><input type="password" id="pw_${u.id}" placeholder="••••••"> <button class="sec" onclick="setPw('${u.id}')">Set</button></td>
+   <td><button class="sec" onclick="edUsr='${u.id}';render()">Edit</button> <button class="sec" onclick="togU('${u.id}')">${u.active?'Disable':'Enable'}</button></td></tr>`).join('')}</table></div></div>`}
+async function addU(){const n=$('#un').value.trim(),u=$('#uu').value.trim(),p=$('#up').value,r=$('#ur').value,c=$('#urc')?.value||'';
  if(!n||!u||p.length<6)return toast('Name, username and a password of 6+ characters are required',1);
  if(S.users.some(x=>x.username.toLowerCase()===u.toLowerCase()))return toast('Username already taken',1);
- S.users.push({id:uid(),name:n,username:u,password:p,role:$('#ur').value,active:true});await save();render()}
+ if(r==='head'&&!c)return toast('Select a course to map this Department Head to',1);
+ S.users.push({id:uid(),name:n,username:u,password:p,role:r,courseId:r==='head'?c:null,active:true});await save();render()}
+async function saveEditUser(id){const n=$('#eu_n_'+id).value.trim(),u=$('#eu_u_'+id).value.trim(),r=$('#eu_r_'+id).value,c=$('#eu_c_'+id)?.value||'';
+ if(!n||!u)return toast('Name and username are required',1);
+ if(S.users.some(x=>x.id!==id&&x.username.toLowerCase()===u.toLowerCase()))return toast('Username already taken',1);
+ if(r==='head'&&!c)return toast('Select a course to map this Department Head to',1);
+ const usr=S.users.find(x=>x.id===id);usr.name=n;usr.username=u;usr.role=r;usr.courseId=r==='head'?c:null;
+ edUsr='';await save();toast('User updated');render()}
 async function setPw(id){const p=$('#pw_'+id).value;if(p.length<6)return toast('Password must be 6+ characters',1);S.users.find(u=>u.id===id).password=p;await save();toast('Password updated');render()}
 async function togU(id){const u=S.users.find(x=>x.id===id);if(u.id===me.id)return toast('You cannot disable your own account',1);u.active=!u.active;await save();render()}
 function secV(){const heads=S.users.filter(u=>u.role==='head'&&u.active),opt=(l,sel)=>l.map(x=>`<option value="${x.id}" ${x.id===sel?'selected':''}>${esc(x.name)}</option>`).join('');
  return`<div class="card"><div class="row"><select id="sy"><option value="">Year…</option>${opt(S.years)}</select><select id="sc"><option value="">Course…</option>${opt(S.courses)}</select><input id="sn" placeholder="Section (e.g. A)" style="width:130px"><select id="sh"><option value="">Head…</option>${opt(heads)}</select><button onclick="addS()">Add mapping</button></div>
- <div class="tw"><table><tr><th>Section</th><th>Department Head</th><th></th></tr>${S.sections.map(s=>`<tr><td>${secLabel(s)}</td><td><select onchange="remap('${s.id}',this.value)"><option value="">Unmapped</option>${opt(heads,s.headId)}</select></td><td><button class="dng" onclick="delS('${s.id}')">Delete</button></td></tr>`).join('')||'<tr><td class="mut">No sections yet</td></tr>'}</table></div></div>`}
+ <div class="tw"><table><tr><th>Year</th><th>Course</th><th>Section</th><th>Department Head</th><th></th></tr>${S.sections.map(s=>edSec===s.id?
+  `<tr><td><select id="es_y_${s.id}">${opt(S.years,s.yearId)}</select></td><td><select id="es_c_${s.id}">${opt(S.courses,s.courseId)}</select></td><td><input id="es_n_${s.id}" value="${esc(s.name)}"></td>
+   <td><select id="es_h_${s.id}"><option value="">Unmapped</option>${opt(heads,s.headId)}</select></td>
+   <td><button onclick="saveEditSection('${s.id}')">Save</button> <button class="sec" onclick="edSec='';render()">Cancel</button></td></tr>`
+  :`<tr><td>${nm('years',s.yearId)}</td><td>${nm('courses',s.courseId)}</td><td>${esc(s.name)}</td><td><select onchange="remap('${s.id}',this.value)"><option value="">Unmapped</option>${opt(heads,s.headId)}</select></td>
+   <td><button class="sec" onclick="edSec='${s.id}';render()">Edit</button> <button class="dng" onclick="delS('${s.id}')">Delete</button></td></tr>`).join('')||'<tr><td colspan=5 class="mut">No sections yet</td></tr>'}</table></div></div>`}
 async function addS(){const y=$('#sy').value,c=$('#sc').value,n=$('#sn').value.trim(),h=$('#sh').value;
  if(!y||!c||!n||!h)return toast('Select year, course, head and enter a section name',1);
  if(S.sections.some(s=>s.yearId===y&&s.courseId===c&&s.name.toLowerCase()===n.toLowerCase()))return toast('This section already exists',1);
  S.sections.push({id:uid(),name:n,yearId:y,courseId:c,headId:h});await save();render()}
+async function saveEditSection(id){const y=$('#es_y_'+id).value,c=$('#es_c_'+id).value,n=$('#es_n_'+id).value.trim(),h=$('#es_h_'+id).value;
+ if(!y||!c||!n)return toast('Select year, course and enter a section name',1);
+ if(S.sections.some(s=>s.id!==id&&s.yearId===y&&s.courseId===c&&s.name.toLowerCase()===n.toLowerCase()))return toast('This section already exists',1);
+ const s=S.sections.find(x=>x.id===id);s.yearId=y;s.courseId=c;s.name=n;s.headId=h;edSec='';await save();toast('Section updated');render()}
 async function remap(id,h){S.sections.find(s=>s.id===id).headId=h;await save();toast('Head updated')}
 async function delS(id){if(Object.keys(S.plans).some(k=>k.startsWith(id+'|')))return toast('Section has recorded data — reassign the head instead of deleting',1);S.sections=S.sections.filter(s=>s.id!==id);await save();render()}
 /* ---------- HEAD MAPPING ---------- */
