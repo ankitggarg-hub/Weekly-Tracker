@@ -4,6 +4,7 @@
 <title>Weekly Academic & Training Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
  --bg:#f4f5f3;--surface:#ffffff;--ink:#161c17;--mut:#5c6b60;--line:#dde3dc;
@@ -69,7 +70,7 @@ const addW=(k,n)=>{const x=new Date(k+'T12:00:00');x.setDate(x.getDate()+7*n);re
 const CUR=iso(mon(new Date())),LAST=addW(CUR,-1);
 const fmt=k=>{const a=new Date(k+'T12:00:00'),b=new Date(k+'T12:00:00');b.setDate(b.getDate()+6);const o={day:'numeric',month:'short'};return a.toLocaleDateString('en-GB',o)+' – '+b.toLocaleDateString('en-GB',o)};
 const MAXH=80;
-let mh='',lbp='last',rsec='',rhd='',calMonth=CUR.slice(0,8)+'01',S=null,me=null,tab='home',wk=LAST,ow=LAST,dbDoc=null,mode='local';
+let mh='',lbp='last',rsec='',rhd='',calMonth=CUR.slice(0,8)+'01',impFile=null,impName='',impResults=null,impSummary=null,S=null,me=null,tab='home',wk=LAST,ow=LAST,dbDoc=null,mode='local';
 const seed=()=>({users:[{id:'u0',name:'Administrator',username:'admin',password:'admin123',role:'admin',active:true}],years:[{id:'y1',name:'Year 1'},{id:'y2',name:'Year 2'}],courses:[],sections:[],plans:{},actuals:{},unlocks:{},holidays:[],weeklyOff:0});
 window.addEventListener('unhandledrejection',e=>toast('Error: '+((e.reason&&e.reason.message)||e.reason),1));window.addEventListener('error',e=>toast('Error: '+e.message,1));
 const norm=()=>{['users','years','courses','sections','holidays'].forEach(k=>{if(!Array.isArray(S[k]))S[k]=[]});['plans','actuals','unlocks'].forEach(k=>{if(!S[k]||typeof S[k]!=='object'||Array.isArray(S[k]))S[k]={}});if(S.weeklyOff==null||isNaN(S.weeklyOff))S.weeklyOff=0};
@@ -119,11 +120,11 @@ function render(){const A=$('#app');
  <button onclick="login()" style="width:100%">Sign in</button>
  </div></div>`;
  $('#lp').onkeydown=e=>{if(e.key==='Enter')login()};return}
- const adm=me.role==='admin',tabs=adm?[['home','Overview & Unlock'],['calendar','Calendar / Off Days'],['report','Progress Report'],['lb','Leaderboard'],['map','Head Mapping'],['users','Users'],['sections','Sections'],['years','Years'],['courses','Courses']]:[['home','Weekly Load'],['calendar','Calendar / Off Days'],['report','My Progress'],['lb','Leaderboard']];
+ const adm=me.role==='admin',tabs=adm?[['home','Overview & Unlock'],['import','Import Backlog'],['calendar','Calendar / Off Days'],['report','Progress Report'],['lb','Leaderboard'],['map','Head Mapping'],['users','Users'],['sections','Sections'],['years','Years'],['courses','Courses']]:[['home','Weekly Load'],['calendar','Calendar / Off Days'],['report','My Progress'],['lb','Leaderboard']];
  A.innerHTML=`<header><div class="brand"><span class="mark">W</span><h1>Weekly Tracker</h1><span class="tag">${adm?'Admin':'Dept. Head'}</span></div>
  <div class="hdr-right"><span id="sync" class="mut">${esc(sync)}</span><span class="who">${esc(me.name)}</span><button class="sec" onclick="logout()">Logout</button></div></header><main>
  <div class="tabs">${tabs.map(t=>`<button class="${tab===t[0]?'on':''}" onclick="tab='${t[0]}';render()">${t[1]}</button>`).join('')}</div>
- ${adm?({home:adminHome,calendar:calendarV,report:reportV,lb:lbV,map:mapV,users:usersV,sections:secV,years:()=>master('years','Year'),courses:()=>master('courses','Course')})[tab]():(tab==='lb'?lbV():tab==='report'?reportV():tab==='calendar'?calendarV():headV())}</main>`}
+ ${adm?({home:adminHome,import:importV,calendar:calendarV,report:reportV,lb:lbV,map:mapV,users:usersV,sections:secV,years:()=>master('years','Year'),courses:()=>master('courses','Course')})[tab]():(tab==='lb'?lbV():tab==='report'?reportV():tab==='calendar'?calendarV():headV())}</main>`}
 /* ---------- HEAD ---------- */
 function headV(){const mine=S.sections.filter(s=>s.headId===me.id);
  if(!mine.length)return`<div class="al w">No sections are mapped to you yet. Please contact the admin.</div>`;
@@ -208,6 +209,85 @@ function reportV(){
  <b>Section:</b><select onchange="rsec=this.value;render()"><option value="">All sections (combined)</option>${hs.map(s=>`<option value="${s.id}" ${s.id===rsec?'selected':''}>${secLabel(s)}</option>`).join('')}</select></div>
  ${progressTable(ids,'this head')}</div>`}
 const nm2=(list,id)=>{const s=S[list].find(x=>x.id===id);return s?secLabel(s):'—'};
+/* ---------- IMPORT BACKLOG ---------- */
+function downloadTemplate(){
+ if(!window.XLSX)return toast('The spreadsheet library failed to load — check your internet connection and try again',1);
+ const wsData=[
+  ["Year","Course","Section","Head Username","Week (any date in that week)","Planned Academic Hrs","Planned Training Hrs","Actual Academic Hrs","Actual Training Hrs","Remark (if shortfall)"],
+  ["Year 1","Computer Science","A","heada", new Date(2026,7,10), 8,8,6,14,"Guest lecture cancelled; training session extended to cover the gap"]
+ ];
+ const ws=XLSX.utils.aoa_to_sheet(wsData);
+ ws['!cols']=[{wch:12},{wch:16},{wch:12},{wch:16},{wch:26},{wch:16},{wch:16},{wch:15},{wch:15},{wch:34}];
+ const insData=[["Weekly Tracker — Backlog Import Template"],[""],
+  ["How to use this file"],
+  ["1. Fill in the 'Backlog' sheet — one row per Section per Week."],
+  ["2. Do not rename the sheet or change the column headers in row 1."],
+  ["3. Upload the file from Admin > Import Backlog."],[""],
+  ["Column notes"],
+  ["Year / Course / Section — text names; created automatically on import if they don't already exist. Keep spelling identical across rows for the same section."],
+  ["Head Username — an existing Head's login username. Leave blank to assign later. Ignored if the section already has a head."],
+  ["Week — any date inside the target week; it snaps to that week's Monday automatically."],
+  ["Planned/Actual hours — 0 to 80, decimals allowed. Leave Actual blank for weeks with no actual data yet."],
+  ["Remark — required only when combined Actual hours (Academic+Training) are below combined Planned hours, and both Planned and Actual are given in the same row."],[""],
+  ["Row 2 of the Backlog sheet is a filled-in example — delete or overwrite it before importing your real data, or it will be imported as a real record."]];
+ const wsI=XLSX.utils.aoa_to_sheet(insData);wsI['!cols']=[{wch:100}];
+ const wb=XLSX.utils.book_new();
+ XLSX.utils.book_append_sheet(wb,wsI,'Instructions');
+ XLSX.utils.book_append_sheet(wb,ws,'Backlog');
+ XLSX.writeFile(wb,'backlog-import-template.xlsx')}
+function onImpFile(el){impFile=el.files[0]||null;impName=impFile?impFile.name:'';impResults=null;render()}
+function impNum(v){if(v===''||v===undefined||v===null)return null;const n=typeof v==='number'?v:parseFloat(v);return isNaN(n)?NaN:n}
+function toImpDate(v){
+ if(v&&typeof v==='object'&&typeof v.getTime==='function'&&!isNaN(v.getTime()))return iso(v);
+ if(typeof v==='number'&&window.XLSX&&XLSX.SSF){try{const d=XLSX.SSF.parse_date_code(v);if(d&&d.y)return`${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`}catch(e){}}
+ if(typeof v==='string'&&v.trim()){const s=v.trim(),d=new Date(s.length<=10?s+'T12:00:00':s);if(!isNaN(d))return iso(d)}
+ return null}
+async function runImport(){
+ if(!impFile)return toast('Choose a file first',1);
+ if(!window.XLSX)return toast('The spreadsheet library failed to load — check your internet connection and try again',1);
+ let buf;try{buf=await impFile.arrayBuffer()}catch(e){return toast('Could not read the selected file',1)}
+ let wb;try{wb=XLSX.read(buf,{type:'array',cellDates:true})}catch(e){return toast('Could not read this file — make sure it is a valid .xlsx file',1)}
+ const wsName=wb.SheetNames.includes('Backlog')?'Backlog':wb.SheetNames[0];
+ const rows=XLSX.utils.sheet_to_json(wb.Sheets[wsName],{header:1,raw:true,defval:''});
+ if(rows.length<2)return toast('No data rows found in the sheet',1);
+ if(!confirm(`This will read up to ${rows.length-1} row(s) from "${wsName}" and add or update weekly load data. Continue?`))return;
+ const results=[];let created={years:0,courses:0,sections:0},okCount=0;
+ for(let i=1;i<rows.length;i++){const r=rows[i],sheetRow=i+1;
+  const yearName=String(r[0]||'').trim(),courseName=String(r[1]||'').trim(),sectionName=String(r[2]||'').trim(),headUser=String(r[3]||'').trim().toLowerCase();
+  const weekRaw=r[4],remark=String(r[9]||'').trim();
+  if(!yearName&&!courseName&&!sectionName&&!weekRaw)continue;
+  if(!yearName||!courseName||!sectionName){results.push({row:sheetRow,ok:false,msg:'Missing Year, Course or Section'});continue}
+  const wkDate=toImpDate(weekRaw);
+  if(!wkDate){results.push({row:sheetRow,ok:false,msg:'Invalid or missing week date'});continue}
+  const weekKey=iso(mon(wkDate));
+  const pa=impNum(r[5]),pt=impNum(r[6]),aa=impNum(r[7]),at=impNum(r[8]);
+  if([pa,pt,aa,at].some(v=>typeof v==='number'&&isNaN(v))){results.push({row:sheetRow,ok:false,msg:'One of the hours values is not a number'});continue}
+  if([pa,pt,aa,at].some(v=>v!==null&&(v<0||v>MAXH))){results.push({row:sheetRow,ok:false,msg:`Hours must be between 0 and ${MAXH}`});continue}
+  if((pa!==null)!==(pt!==null)){results.push({row:sheetRow,ok:false,msg:'Planned Academic and Training hours must both be filled in, or both left blank'});continue}
+  if((aa!==null)!==(at!==null)){results.push({row:sheetRow,ok:false,msg:'Actual Academic and Training hours must both be filled in, or both left blank'});continue}
+  const hasPlan=pa!==null&&pt!==null,hasActual=aa!==null&&at!==null;
+  if(!hasPlan&&!hasActual){results.push({row:sheetRow,ok:false,msg:'No Planned or Actual hours given — nothing to import'});continue}
+  if(hasPlan&&hasActual&&((aa+at)<(pa+pt))&&remark.length<5){results.push({row:sheetRow,ok:false,msg:'Combined Actual hours are below combined Planned — a remark (5+ characters) is required'});continue}
+  let yr=S.years.find(y=>y.name.toLowerCase()===yearName.toLowerCase());if(!yr){yr={id:uid(),name:yearName};S.years.push(yr);created.years++}
+  let co=S.courses.find(c=>c.name.toLowerCase()===courseName.toLowerCase());if(!co){co={id:uid(),name:courseName};S.courses.push(co);created.courses++}
+  let sec=S.sections.find(s=>s.yearId===yr.id&&s.courseId===co.id&&s.name.toLowerCase()===sectionName.toLowerCase());
+  if(!sec){sec={id:uid(),name:sectionName,yearId:yr.id,courseId:co.id,headId:''};S.sections.push(sec);created.sections++}
+  if(!sec.headId&&headUser){const hu=S.users.find(u=>u.role==='head'&&u.active&&u.username.toLowerCase()===headUser);if(hu)sec.headId=hu.id}
+  if(hasPlan)S.plans[K(sec.id,weekKey)]={a:pa,t:pt,by:me.id,ts:Date.now(),src:'import'};
+  if(hasActual)S.actuals[K(sec.id,weekKey)]={a:aa,t:at,remark,by:me.id,ts:Date.now(),src:'import'};
+  okCount++;results.push({row:sheetRow,ok:true,msg:`${secLabel(sec)} — ${fmt(weekKey)}`})}
+ impResults=results;impSummary={ok:okCount,fail:results.length-okCount,created};
+ await save();impFile=null;render()}
+function importV(){
+ return`<div class="al g">Load historical weekly Plan/Actual data in bulk from a spreadsheet. Any Year, Course or Section named in the file that doesn't already exist is created automatically.</div>
+ <div class="card"><b>1. Get the template</b><p class="mut">Download it, fill in one row per Section per Week, then come back and upload it below.</p><button class="sec" onclick="downloadTemplate()">Download template (.xlsx)</button></div>
+ <div class="card"><b>2. Upload your filled-in file</b><div class="row"><input type="file" id="impInput" accept=".xlsx,.xls" onchange="onImpFile(this)"><button onclick="runImport()">Import</button></div>${impName?`<div class="mut">Selected: ${esc(impName)}</div>`:''}</div>
+ ${impResults?importResultsV():''}`}
+function importResultsV(){const{ok,fail,created}=impSummary,badRows=impResults.filter(r=>!r.ok);
+ return`<div class="card"><b>Import results</b>
+ <div class="row"><span class="tag ok">${ok} imported</span>${fail?`<span class="tag b">${fail} skipped</span>`:''}${created.years||created.courses||created.sections?`<span class="tag">${created.years} new Year(s), ${created.courses} new Course(s), ${created.sections} new Section(s) created</span>`:''}</div>
+ ${badRows.length?`<div class="tw"><table><tr><th>Sheet row</th><th>Reason skipped</th></tr>${badRows.map(r=>`<tr><td>${r.row}</td><td>${esc(r.msg)}</td></tr>`).join('')}</table></div>`:'<div class="mut">All rows imported successfully.</div>'}
+ </div>`}
 /* ---------- CALENDAR / OFF DAYS ---------- */
 const monthLabel=k=>new Date(k+'T12:00:00').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
 const shiftMonth=(k,n)=>{const x=new Date(k+'T12:00:00');x.setMonth(x.getMonth()+n,1);return iso(x)};
