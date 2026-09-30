@@ -70,10 +70,10 @@ const addW=(k,n)=>{const x=new Date(k+'T12:00:00');x.setDate(x.getDate()+7*n);re
 const CUR=iso(mon(new Date())),LAST=addW(CUR,-1);
 const fmt=k=>{const a=new Date(k+'T12:00:00'),b=new Date(k+'T12:00:00');b.setDate(b.getDate()+6);const o={day:'numeric',month:'short'};return a.toLocaleDateString('en-GB',o)+' – '+b.toLocaleDateString('en-GB',o)};
 const MAXH=80;
-let mh='',lbp='last',rsec='',rhd='',calMonth=CUR.slice(0,8)+'01',impFile=null,impName='',impResults=null,impSummary=null,S=null,me=null,tab='home',wk=LAST,ow=LAST,dbDoc=null,mode='local';
-const seed=()=>({users:[{id:'u0',name:'Administrator',username:'admin',password:'admin123',role:'admin',active:true}],years:[{id:'y1',name:'Year 1'},{id:'y2',name:'Year 2'}],courses:[],sections:[],plans:{},actuals:{},unlocks:{},holidays:[],weeklyOff:0});
+let mh='',lbp='last',rsec='',rhd='',rFrom='',rTo='',calMonth=CUR.slice(0,8)+'01',impFile=null,impName='',impResults=null,impSummary=null,ovYear='',ovCourse='',ovHead='',ovStatus='',ovSearch='',secSearch='',usrSearch='',hSec='',S=null,me=null,tab='home',wk=LAST,ow=LAST,dbDoc=null,mode='local';
+const seed=()=>({users:[{id:'u0',name:'Administrator',username:'admin',password:'admin123',role:'admin',active:true}],years:[{id:'y1',name:'Year 1'},{id:'y2',name:'Year 2'}],courses:[],sections:[],plans:{},actuals:{},unlocks:{},holidays:[],weeklyOff:0,termStart:'2026-07-01'});
 window.addEventListener('unhandledrejection',e=>toast('Error: '+((e.reason&&e.reason.message)||e.reason),1));window.addEventListener('error',e=>toast('Error: '+e.message,1));
-const norm=()=>{['users','years','courses','sections','holidays'].forEach(k=>{if(!Array.isArray(S[k]))S[k]=[]});['plans','actuals','unlocks'].forEach(k=>{if(!S[k]||typeof S[k]!=='object'||Array.isArray(S[k]))S[k]={}});if(S.weeklyOff==null||isNaN(S.weeklyOff))S.weeklyOff=0};
+const norm=()=>{['users','years','courses','sections','holidays'].forEach(k=>{if(!Array.isArray(S[k]))S[k]=[]});['plans','actuals','unlocks'].forEach(k=>{if(!S[k]||typeof S[k]!=='object'||Array.isArray(S[k]))S[k]={}});if(S.weeklyOff==null||isNaN(S.weeklyOff))S.weeklyOff=0;if(!S.termStart)S.termStart='2026-07-01'};
 let lastSave=0,sync='';
 function setSync(m,bad){sync=m;const e=$('#sync');if(e){e.textContent=m;e.style.color=bad?'var(--bad)':''}}
 async function save(){lastSave=Date.now();setSync('Saving…');
@@ -128,10 +128,12 @@ function render(){const A=$('#app');
 /* ---------- HEAD ---------- */
 function headV(){const mine=S.sections.filter(s=>s.headId===me.id);
  if(!mine.length)return`<div class="al w">No sections are mapped to you yet. Please contact the admin.</div>`;
+ if(!mine.find(s=>s.id===hSec))hSec='';
+ const shown=hSec?mine.filter(s=>s.id===hSec):mine;
  const pend=mine.filter(s=>!S.actuals[K(s.id,LAST)]&&(S.plans[K(s.id,LAST)]||actEd(s.id,LAST)));
  const noPlan=mine.filter(s=>!S.plans[K(s.id,CUR)]);
- const weeks=[];for(let i=-6;i<=4;i++)weeks.push(addW(CUR,i));
- const rows=mine.map(s=>{const p=S.plans[K(s.id,wk)]||{},a=S.actuals[K(s.id,wk)]||{},pe=planEd(s.id,wk),ae=actEd(s.id,wk)&&!!S.plans[K(s.id,wk)],st=status(s.id,wk),id=s.id;
+ const weeks=[];for(let w=iso(mon(S.termStart));w<=addW(CUR,4);w=addW(w,1))weeks.push(w);
+ const rows=shown.map(s=>{const p=S.plans[K(s.id,wk)]||{},a=S.actuals[K(s.id,wk)]||{},pe=planEd(s.id,wk),ae=actEd(s.id,wk)&&!!S.plans[K(s.id,wk)],st=status(s.id,wk),id=s.id;
   const v=(x)=>x??'';const short=a.a!=null&&((a.a+a.t)<(p.a+p.t));
   return`<tr><td><b>${secLabel(s)}</b><br><span class="tag ${st[1]}">${st[0]}</span>${unl(id,wk)?' <span class="tag ok">Unlocked</span>':''}</td>
   <td><input type="number" min="0" max="${MAXH}" step="0.5" id="pa_${id}" value="${v(p.a)}" ${pe?'':'disabled'}></td>
@@ -143,8 +145,9 @@ function headV(){const mine=S.sections.filter(s=>s.headId===me.id);
  return`${pend.length?`<div class="al b">⚠ Actual load for last week (${fmt(LAST)}) is pending for ${pend.length} section(s): ${pend.map(s=>esc(s.name)).join(', ')}. Submit before it locks after this week.</div>`:''}
  ${noPlan.length?`<div class="al w">Planned load for the current week (${fmt(CUR)}) is not defined for ${noPlan.length} section(s).</div>`:''}
  <div class="card"><div class="row"><b>Week:</b><select onchange="wk=this.value;render()">${weeks.map(w=>`<option value="${w}" ${w===wk?'selected':''}>${fmt(w)}${w===CUR?' (This week)':w===LAST?' (Last week)':w>CUR?' (Upcoming)':''}</option>`).join('')}</select>
+ ${mine.length>1?`<b>Section:</b><select onchange="hSec=this.value;render()"><option value="">All my sections</option>${mine.map(s=>`<option value="${s.id}" ${s.id===hSec?'selected':''}>${secLabel(s)}</option>`).join('')}</select>`:''}
  <span class="mut">Hours per week. Plan: this & upcoming weeks. Actual: last week only; older weeks are locked until admin unlocks.</span></div>
- <div class="tw"><table><tr><th>Section</th><th>Plan Acad (h)</th><th>Plan Training (h)</th><th>Actual Acad (h)</th><th>Actual Training (h)</th><th>Remark</th><th></th></tr>${rows}</table></div></div>`}
+ <div class="tw"><table><tr><th>Section</th><th>Plan Acad (h)</th><th>Plan Training (h)</th><th>Actual Acad (h)</th><th>Actual Training (h)</th><th>Remark</th><th></th></tr>${rows||'<tr><td colspan=7 class="mut">No section matches this filter.</td></tr>'}</table></div></div>`}
 function chk(id){const p=S.plans[K(id,wk)];if(!p)return;const a=parseFloat($('#aa_'+id).value)||0,t=parseFloat($('#at_'+id).value)||0;
  $('#vr_'+id).textContent=((a+t)<(p.a+p.t))?'⚠ Combined total below planned load — remark required (Academic and Training hours can offset each other)':''}
 async function saveRow(id){const g=x=>{const e=$('#'+x+'_'+id);return e&&!e.disabled&&e.value!==''?parseFloat(e.value):null};
@@ -171,10 +174,13 @@ function progressCalc(sectionIds){
  });
  return{rows,totals:{planned:cp,actual:ca,balance:ca-cp}};
 }
-function progressTable(sectionIds,label){
+function progressTable(sectionIds,label,fromWk,toWk){
  if(!sectionIds.length)return`<div class="al w">No sections to show.</div>`;
- const{rows,totals}=progressCalc(sectionIds);
- if(!rows.length)return`<div class="al w">No weekly load has been planned yet for ${esc(label)}.</div>`;
+ const{rows:allRows}=progressCalc(sectionIds);
+ if(!allRows.length)return`<div class="al w">No weekly load has been planned yet for ${esc(label)}.</div>`;
+ const filtered=(fromWk||toWk);
+ const rows=allRows.filter(r=>(!fromWk||r.w>=fromWk)&&(!toWk||r.w<=toWk));
+ if(!rows.length)return`<div class="al w">No weeks match this filter for ${esc(label)}.</div>`;
  const cell=(actual,planned,due,has)=>{if(!due)return'<td class="mut">—</td>';if(!has)return'<td class="mut">—</td>';const ok=actual>=planned;return`<td style="color:${ok?'var(--ok)':'var(--bad)'};font-weight:600">${actual.toFixed(1)} h</td>`};
  const trs=rows.map(r=>`<tr><td>${fmt(r.w)}${r.w===CUR?' <span class="mut">(current)</span>':r.w===LAST?' <span class="mut">(last)</span>':''}</td>
   <td>${r.pa.toFixed(1)} h</td>
@@ -183,13 +189,15 @@ function progressTable(sectionIds,label){
   ${cell(r.at,r.pt,r.due,r.hasA)}
   <td><span class="tag ${r.color}">${r.label}</span></td>
   <td>${r.due?`<b style="color:${r.cumA>=r.cumP?'var(--ok)':'var(--bad)'}">${(r.cumA-r.cumP>=0?'+':'')+(r.cumA-r.cumP).toFixed(1)} h</b>`:'—'}</td></tr>`).join('');
- const totA=rows.reduce((s,r)=>s+r.pa,0),totAA=rows.reduce((s,r)=>s+(r.due&&r.hasA?r.aa:0),0),totT=rows.reduce((s,r)=>s+r.pt,0),totAT=rows.reduce((s,r)=>s+(r.due&&r.hasA?r.at:0),0);
+ const totA=rows.reduce((s,r)=>s+r.pa,0),totAA=rows.reduce((s,r)=>s+(r.due&&r.hasA?r.aa:0),0),totT=rows.reduce((s,r)=>s+r.pt,0),totAT=rows.reduce((s,r)=>s+(r.due&&r.hasA?r.at:0),0),totBal=totAA+totAT-(totA+totT);
  return`<div class="tw"><table><tr><th>Week</th><th>Plan Academic</th><th>Actual Academic</th><th>Plan Training</th><th>Actual Training</th><th>Status</th><th>Running balance</th></tr>${trs}
- <tr style="font-weight:600;background:var(--bg)"><td>Total (all weeks)</td><td>${totA.toFixed(1)} h</td>
+ <tr style="font-weight:600;background:var(--bg)"><td>Total (${filtered?'shown weeks':'all weeks'})</td><td>${totA.toFixed(1)} h</td>
  <td style="color:${totAA>=totA?'var(--ok)':'var(--bad)'}">${totAA.toFixed(1)} h</td><td>${totT.toFixed(1)} h</td>
  <td style="color:${totAT>=totT?'var(--ok)':'var(--bad)'}">${totAT.toFixed(1)} h</td>
- <td><span class="tag ${totals.balance>=0?'ok':'b'}">${totals.balance>=0?'On track':'Behind'}</span></td>
- <td><b style="color:${totals.balance>=0?'var(--ok)':'var(--bad)'}">${(totals.balance>=0?'+':'')+totals.balance.toFixed(1)} h</b></td></tr></table></div>`}
+ <td><span class="tag ${totBal>=0?'ok':'b'}">${totBal>=0?'On track':'Behind'}</span></td>
+ <td><b style="color:${totBal>=0?'var(--ok)':'var(--bad)'}">${(totBal>=0?'+':'')+totBal.toFixed(1)} h</b></td></tr></table></div>`}
+function weekOpts(sel,ph){const weeks=[];for(let w=iso(mon(S.termStart));w<=addW(CUR,4);w=addW(w,1))weeks.push(w);
+ return`<option value="">${ph}</option>${weeks.map(w=>`<option value="${w}" ${w===sel?'selected':''}>${fmt(w)}</option>`).join('')}`}
 function reportV(){
  const adm=me.role==='admin';
  if(!adm){const mine=S.sections.filter(s=>s.headId===me.id);
@@ -197,8 +205,11 @@ function reportV(){
   if(!mine.find(s=>s.id===rsec))rsec='';
   const ids=rsec?[rsec]:mine.map(s=>s.id);
   return`<div class="al g">Academic and Training hours can offset each other within a week, and a shortfall in one week can be made up in any other week — the running balance below reflects that.</div>
-  <div class="card"><div class="row"><b>Section:</b><select onchange="rsec=this.value;render()"><option value="">All my sections (combined)</option>${mine.map(s=>`<option value="${s.id}" ${s.id===rsec?'selected':''}>${secLabel(s)}</option>`).join('')}</select></div>
-  ${progressTable(ids,rsec?nm2('sections',rsec):'your sections')}</div>`}
+  <div class="card"><div class="row"><b>Section:</b><select onchange="rsec=this.value;render()"><option value="">All my sections (combined)</option>${mine.map(s=>`<option value="${s.id}" ${s.id===rsec?'selected':''}>${secLabel(s)}</option>`).join('')}</select>
+  <b>From week:</b><select onchange="rFrom=this.value;render()">${weekOpts(rFrom,'Earliest')}</select>
+  <b>To week:</b><select onchange="rTo=this.value;render()">${weekOpts(rTo,'Latest')}</select>
+  ${(rFrom||rTo)?'<button class="sec" onclick="rFrom=\'\';rTo=\'\';render()">Clear</button>':''}</div>
+  ${progressTable(ids,rsec?nm2('sections',rsec):'your sections',rFrom,rTo)}</div>`}
  const heads=S.users.filter(u=>u.role==='head'&&u.active);
  if(!heads.length)return`<div class="al w">No department heads yet.</div>`;
  if(!heads.find(u=>u.id===rhd))rhd=heads[0].id;
@@ -207,7 +218,10 @@ function reportV(){
  const ids=rsec?[rsec]:hs.map(s=>s.id);
  return`<div class="card"><div class="row"><b>Head:</b><select onchange="rhd=this.value;rsec='';render()">${heads.map(u=>`<option value="${u.id}" ${u.id===rhd?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
  <b>Section:</b><select onchange="rsec=this.value;render()"><option value="">All sections (combined)</option>${hs.map(s=>`<option value="${s.id}" ${s.id===rsec?'selected':''}>${secLabel(s)}</option>`).join('')}</select></div>
- ${progressTable(ids,'this head')}</div>`}
+ <div class="row"><b>From week:</b><select onchange="rFrom=this.value;render()">${weekOpts(rFrom,'Earliest')}</select>
+ <b>To week:</b><select onchange="rTo=this.value;render()">${weekOpts(rTo,'Latest')}</select>
+ ${(rFrom||rTo)?'<button class="sec" onclick="rFrom=\'\';rTo=\'\';render()">Clear</button>':''}</div>
+ ${progressTable(ids,'this head',rFrom,rTo)}</div>`}
 const nm2=(list,id)=>{const s=S[list].find(x=>x.id===id);return s?secLabel(s):'—'};
 /* ---------- IMPORT BACKLOG ---------- */
 function downloadTemplate(){
@@ -319,7 +333,8 @@ function calendarV(){const adm=me.role==='admin';
  if(adm){
   const list=S.holidays.slice().sort((a,b)=>a.date<b.date?-1:1),dn=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   return`<div class="al g">Off days marked here are for information and remarks context; hours already planned are not changed automatically.</div>
-  <div class="card"><div class="row"><b>Weekly off day (applies to all departments):</b><select onchange="setWeeklyOff(this.value)">${dn.map((n,i)=>`<option value="${i}" ${i==S.weeklyOff?'selected':''}>${n}</option>`).join('')}</select></div></div>
+  <div class="card"><div class="row"><b>Weekly off day (applies to all departments):</b><select onchange="setWeeklyOff(this.value)">${dn.map((n,i)=>`<option value="${i}" ${i==S.weeklyOff?'selected':''}>${n}</option>`).join('')}</select></div>
+  <div class="row"><b>Term start (earliest week in dropdowns):</b><input type="date" id="ts_date" value="${S.termStart}"><button class="sec" onclick="setTermStart()">Save</button></div></div>
   <div class="card">${nav}${monthGrid(calMonth,()=>true,'admin')}</div>
   <div class="card"><b>Mark an off day for all departments</b><div class="row"><input type="date" id="h_date"><input id="h_label" placeholder="Reason (e.g. Diwali, College Foundation Day)"><button onclick="addGlobalHoliday()">Mark off for all departments</button></div></div>
   <div class="card"><b>All off days</b><div class="tw"><table><tr><th>Date</th><th>Reason</th><th>Scope</th><th></th></tr>${list.map(h=>`<tr><td>${fmt2(h.date)}</td><td>${esc(h.label)}</td><td>${h.sectionId?nm2('sections',h.sectionId):'<span class="tag ok">All departments</span>'}</td><td><button class="dng" onclick="delHoliday('${h.id}')">Delete</button></td></tr>`).join('')||'<tr><td colspan=4 class="mut">None marked yet</td></tr>'}</table></div></div>`}
@@ -334,16 +349,31 @@ function calendarV(){const adm=me.role==='admin';
  <div class="card"><b>Your section off days</b><div class="tw"><table><tr><th>Date</th><th>Section</th><th>Reason</th><th></th></tr>${own.map(h=>`<tr><td>${fmt2(h.date)}</td><td>${nm2('sections',h.sectionId)}</td><td>${esc(h.label)}</td><td><button class="dng" onclick="delHoliday('${h.id}')">Delete</button></td></tr>`).join('')||'<tr><td colspan=4 class="mut">None marked yet</td></tr>'}</table></div></div>
  <div class="card"><b>All-department off days (set by admin)</b><div class="tw"><table><tr><th>Date</th><th>Reason</th></tr>${glob.map(h=>`<tr><td>${fmt2(h.date)}</td><td>${esc(h.label)}</td></tr>`).join('')||'<tr><td colspan=2 class="mut">None</td></tr>'}</table></div></div>`}
 async function setWeeklyOff(v){S.weeklyOff=parseInt(v,10);await save();toast('Weekly off day updated for all departments');render()}
+async function setTermStart(){const v=$('#ts_date').value;if(!v)return toast('Pick a date',1);S.termStart=v;await save();toast('Term start updated');render()}
 const fmt2=d=>new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
 /* ---------- ADMIN ---------- */
-function adminHome(){const weeks=[];for(let i=-12;i<=1;i++)weeks.push(addW(CUR,i));
- const rows=S.sections.map(s=>{const st=status(s.id,ow),p=S.plans[K(s.id,ow)]||{},a=S.actuals[K(s.id,ow)]||{},u=unl(s.id,ow),hd=S.users.find(x=>x.id===s.headId);
+function adminHome(){const weeks=[];for(let w=iso(mon(S.termStart));w<=addW(CUR,1);w=addW(w,1))weeks.push(w);
+ if(ovYear&&!S.years.find(y=>y.id===ovYear))ovYear='';
+ if(ovCourse&&!S.courses.find(c=>c.id===ovCourse))ovCourse='';
+ if(ovHead&&!S.users.find(u=>u.id===ovHead))ovHead='';
+ let list=S.sections.filter(s=>(!ovYear||s.yearId===ovYear)&&(!ovCourse||s.courseId===ovCourse)&&(!ovHead||s.headId===ovHead));
+ if(ovStatus)list=list.filter(s=>status(s.id,ow)[0]===ovStatus);
+ if(ovSearch){const q=ovSearch.toLowerCase();list=list.filter(s=>{const hd=S.users.find(u=>u.id===s.headId);return secLabel(s).toLowerCase().includes(q)||(hd&&hd.name.toLowerCase().includes(q))})}
+ const rows=list.map(s=>{const st=status(s.id,ow),p=S.plans[K(s.id,ow)]||{},a=S.actuals[K(s.id,ow)]||{},u=unl(s.id,ow),hd=S.users.find(x=>x.id===s.headId);
  return`<tr><td>${secLabel(s)}</td><td>${hd?esc(hd.name):'<span class="tag b">Unmapped</span>'}</td><td>${p.a??'—'} / ${p.t??'—'}</td><td>${a.a??'—'} / ${a.t??'—'}</td><td><span class="tag ${st[1]}">${st[0]}</span></td><td class="mut">${esc(a.remark||'')}</td>
  <td>${ow<CUR&&ow!==LAST||ow===LAST?`<button class="${u?'dng':'sec'}" onclick="toggleUnlock('${s.id}')">${u?'Lock':'Unlock'}</button>`:'—'}</td></tr>`}).join('');
  const late=S.sections.filter(s=>{const x=status(s.id,LAST)[0];return x==='Actual pending'||x==='Not planned'}).length;
+ const heads=S.users.filter(u=>u.role==='head'&&u.active);
+ const statuses=['Completed','Shortfall','Actual pending','Planned','Not planned'];
  return`${late?`<div class="al b">${late} section(s) have not completed last week's (${fmt(LAST)}) entry.</div>`:'<div class="al g">All sections are up to date for last week.</div>'}
  <div class="card"><div class="row"><b>Week:</b><select onchange="ow=this.value;render()">${weeks.map(w=>`<option value="${w}" ${w===ow?'selected':''}>${fmt(w)}${w===CUR?' (This week)':w===LAST?' (Last week)':''}</option>`).join('')}</select><span class="mut">Unlock lets the head edit plan and actual for that section-week. Lock it again when done. Hours shown as Acad / Training.</span></div>
- <div class="tw"><table><tr><th>Section</th><th>Head</th><th>Planned</th><th>Actual</th><th>Status</th><th>Remark</th><th>Access</th></tr>${rows||'<tr><td colspan=7 class="mut">No sections yet. Add them in Section Mapping.</td></tr>'}</table></div></div>`}
+ <div class="row"><input id="ovq" placeholder="Search section or head…" value="${esc(ovSearch)}" oninput="ovSearch=this.value;render()" style="min-width:200px">
+ <select onchange="ovYear=this.value;render()"><option value="">All years</option>${S.years.map(y=>`<option value="${y.id}" ${y.id===ovYear?'selected':''}>${esc(y.name)}</option>`).join('')}</select>
+ <select onchange="ovCourse=this.value;render()"><option value="">All courses</option>${S.courses.map(c=>`<option value="${c.id}" ${c.id===ovCourse?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
+ <select onchange="ovHead=this.value;render()"><option value="">All heads</option>${heads.map(u=>`<option value="${u.id}" ${u.id===ovHead?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
+ <select onchange="ovStatus=this.value;render()"><option value="">All statuses</option>${statuses.map(x=>`<option value="${x}" ${x===ovStatus?'selected':''}>${x}</option>`).join('')}</select>
+ ${(ovYear||ovCourse||ovHead||ovStatus||ovSearch)?`<button class="sec" onclick="ovYear='';ovCourse='';ovHead='';ovStatus='';ovSearch='';render()">Clear filters</button>`:''}</div>
+ <div class="tw"><table><tr><th>Section</th><th>Head</th><th>Planned</th><th>Actual</th><th>Status</th><th>Remark</th><th>Access</th></tr>${rows||`<tr><td colspan=7 class="mut">${S.sections.length?'No section matches this filter.':'No sections yet. Add them in Section Mapping.'}</td></tr>`}</table></div></div>`}
 async function toggleUnlock(id){const k=K(id,ow);if(S.unlocks[k])delete S.unlocks[k];else S.unlocks[k]=true;await save();render()}
 let edIt='',edSec='',edUsr='';
 function master(kind,label){const inUse=id=>S.sections.some(s=>(kind==='years'?s.yearId:s.courseId)===id);
@@ -357,9 +387,12 @@ async function saveEditMaster(kind,id){const v=$('#ed_'+id).value.trim();if(!v)r
 async function delM(kind,id){if(S.sections.some(s=>(kind==='years'?s.yearId:s.courseId)===id))return toast('In use by a section mapping — cannot delete',1);S[kind]=S[kind].filter(x=>x.id!==id);await save();render()}
 function usersV(){const cOpt=(sel)=>`<option value="">Select course…</option>${S.courses.map(c=>`<option value="${c.id}" ${c.id===sel?'selected':''}>${esc(c.name)}</option>`).join('')}`;
  const addRole=$('#ur')?.value||'head';
+ const q=usrSearch.toLowerCase();
+ const list=S.users.filter(u=>u.id===edUsr||!q||u.name.toLowerCase().includes(q)||u.username.toLowerCase().includes(q)||(u.courseId&&nm('courses',u.courseId).toLowerCase().includes(q)));
  return`<div class="card"><div class="row"><input id="un" placeholder="Full name"><input id="uu" placeholder="Username"><input id="up" type="password" placeholder="Password (min 6)"><select id="ur" onchange="render()"><option value="head" ${addRole==='head'?'selected':''}>Dept. Head</option><option value="admin" ${addRole==='admin'?'selected':''}>Admin</option></select>${addRole==='head'?`<select id="urc">${cOpt('')}</select>`:''}<button onclick="addU()">Add user</button></div>
  <div class="mut">A Department Head must be mapped to a course when created. You can change this later using Edit.</div>
- <div class="tw"><table><tr><th>Name</th><th>Username</th><th>Role</th><th>Course</th><th>Status</th><th>New password</th><th></th></tr>${S.users.map(u=>edUsr===u.id?
+ <div class="row"><input placeholder="Search name, username or course…" value="${esc(usrSearch)}" oninput="usrSearch=this.value;render()" style="min-width:220px">${usrSearch?`<button class="sec" onclick="usrSearch='';render()">Clear</button>`:''}</div>
+ <div class="tw"><table><tr><th>Name</th><th>Username</th><th>Role</th><th>Course</th><th>Status</th><th>New password</th><th></th></tr>${list.map(u=>edUsr===u.id?
   `<tr><td><input id="eu_n_${u.id}" value="${esc(u.name)}"></td><td><input id="eu_u_${u.id}" value="${esc(u.username)}"></td>
    <td><select id="eu_r_${u.id}" onchange="render()">${['head','admin'].map(r=>`<option value="${r}" ${r===u.role?'selected':''}>${r==='head'?'Dept. Head':'Admin'}</option>`).join('')}</select></td>
    <td>${($('#eu_r_'+u.id)?.value||u.role)==='head'?`<select id="eu_c_${u.id}">${cOpt(u.courseId)}</select>`:'<span class="mut">—</span>'}</td>
@@ -368,7 +401,7 @@ function usersV(){const cOpt=(sel)=>`<option value="">Select course…</option>$
    <td>${u.role==='head'?(u.courseId?esc(nm('courses',u.courseId)):'<span class="tag b">Not mapped</span>'):'<span class="mut">—</span>'}</td>
    <td><span class="tag ${u.active?'ok':'b'}">${u.active?'Active':'Disabled'}</span></td>
    <td><input type="password" id="pw_${u.id}" placeholder="••••••"> <button class="sec" onclick="setPw('${u.id}')">Set</button></td>
-   <td><button class="sec" onclick="edUsr='${u.id}';render()">Edit</button> <button class="sec" onclick="togU('${u.id}')">${u.active?'Disable':'Enable'}</button></td></tr>`).join('')}</table></div></div>`}
+   <td><button class="sec" onclick="edUsr='${u.id}';render()">Edit</button> <button class="sec" onclick="togU('${u.id}')">${u.active?'Disable':'Enable'}</button></td></tr>`).join('')||`<tr><td colspan=7 class="mut">No user matches this search.</td></tr>`}</table></div></div>`}
 async function addU(){const n=$('#un').value.trim(),u=$('#uu').value.trim(),p=$('#up').value,r=$('#ur').value,c=$('#urc')?.value||'';
  if(!n||!u||p.length<6)return toast('Name, username and a password of 6+ characters are required',1);
  if(S.users.some(x=>x.username.toLowerCase()===u.toLowerCase()))return toast('Username already taken',1);
@@ -383,13 +416,17 @@ async function saveEditUser(id){const n=$('#eu_n_'+id).value.trim(),u=$('#eu_u_'
 async function setPw(id){const p=$('#pw_'+id).value;if(p.length<6)return toast('Password must be 6+ characters',1);S.users.find(u=>u.id===id).password=p;await save();toast('Password updated');render()}
 async function togU(id){const u=S.users.find(x=>x.id===id);if(u.id===me.id)return toast('You cannot disable your own account',1);u.active=!u.active;await save();render()}
 function secV(){const heads=S.users.filter(u=>u.role==='head'&&u.active),opt=(l,sel)=>l.map(x=>`<option value="${x.id}" ${x.id===sel?'selected':''}>${esc(x.name)}</option>`).join('');
+ const q=secSearch.toLowerCase();
+ const list=S.sections.filter(s=>{if(s.id===edSec)return true;if(!q)return true;const hd=S.users.find(u=>u.id===s.headId);
+  return nm('years',s.yearId).toLowerCase().includes(q)||nm('courses',s.courseId).toLowerCase().includes(q)||s.name.toLowerCase().includes(q)||(hd&&hd.name.toLowerCase().includes(q))});
  return`<div class="card"><div class="row"><select id="sy"><option value="">Year…</option>${opt(S.years)}</select><select id="sc"><option value="">Course…</option>${opt(S.courses)}</select><input id="sn" placeholder="Section (e.g. A)" style="width:130px"><select id="sh"><option value="">Head…</option>${opt(heads)}</select><button onclick="addS()">Add mapping</button></div>
- <div class="tw"><table><tr><th>Year</th><th>Course</th><th>Section</th><th>Department Head</th><th></th></tr>${S.sections.map(s=>edSec===s.id?
+ <div class="row"><input placeholder="Search year, course, section or head…" value="${esc(secSearch)}" oninput="secSearch=this.value;render()" style="min-width:220px">${secSearch?`<button class="sec" onclick="secSearch='';render()">Clear</button>`:''}</div>
+ <div class="tw"><table><tr><th>Year</th><th>Course</th><th>Section</th><th>Department Head</th><th></th></tr>${list.map(s=>edSec===s.id?
   `<tr><td><select id="es_y_${s.id}">${opt(S.years,s.yearId)}</select></td><td><select id="es_c_${s.id}">${opt(S.courses,s.courseId)}</select></td><td><input id="es_n_${s.id}" value="${esc(s.name)}"></td>
    <td><select id="es_h_${s.id}"><option value="">Unmapped</option>${opt(heads,s.headId)}</select></td>
    <td><button onclick="saveEditSection('${s.id}')">Save</button> <button class="sec" onclick="edSec='';render()">Cancel</button></td></tr>`
   :`<tr><td>${nm('years',s.yearId)}</td><td>${nm('courses',s.courseId)}</td><td>${esc(s.name)}</td><td><select onchange="remap('${s.id}',this.value)"><option value="">Unmapped</option>${opt(heads,s.headId)}</select></td>
-   <td><button class="sec" onclick="edSec='${s.id}';render()">Edit</button> <button class="dng" onclick="delS('${s.id}')">Delete</button></td></tr>`).join('')||'<tr><td colspan=5 class="mut">No sections yet</td></tr>'}</table></div></div>`}
+   <td><button class="sec" onclick="edSec='${s.id}';render()">Edit</button> <button class="dng" onclick="delS('${s.id}')">Delete</button></td></tr>`).join('')||`<tr><td colspan=5 class="mut">${S.sections.length?'No section matches this search.':'No sections yet'}</td></tr>`}</table></div></div>`}
 async function addS(){const y=$('#sy').value,c=$('#sc').value,n=$('#sn').value.trim(),h=$('#sh').value;
  if(!y||!c||!n||!h)return toast('Select year, course, head and enter a section name',1);
  if(S.sections.some(s=>s.yearId===y&&s.courseId===c&&s.name.toLowerCase()===n.toLowerCase()))return toast('This section already exists',1);
