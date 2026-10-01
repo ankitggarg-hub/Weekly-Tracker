@@ -70,7 +70,7 @@ const addW=(k,n)=>{const x=new Date(k+'T12:00:00');x.setDate(x.getDate()+7*n);re
 const CUR=iso(mon(new Date())),LAST=addW(CUR,-1);
 const fmt=k=>{const a=new Date(k+'T12:00:00'),b=new Date(k+'T12:00:00');b.setDate(b.getDate()+6);const o={day:'numeric',month:'short'};return a.toLocaleDateString('en-GB',o)+' – '+b.toLocaleDateString('en-GB',o)};
 const MAXH=80;
-let mh='',lbp='last',rsec='',rhd='',rFrom='',rTo='',calMonth=CUR.slice(0,8)+'01',impFile=null,impName='',impResults=null,impSummary=null,ovYear='',ovCourse='',ovHead='',ovStatus='',ovSearch='',secSearch='',usrSearch='',hSec='',S=null,me=null,tab='home',wk=LAST,ow=LAST,dbDoc=null,mode='local';
+let mh='',lbp='last',rsec='',rhd='',rFrom='',rTo='',calMonth=CUR.slice(0,8)+'01',impFile=null,impName='',impResults=null,impSummary=null,ovYear='',ovCourse='',ovHead='',ovStatus='',ovSearch='',secSearch='',usrSearch='',hSec='',edRec='',S=null,me=null,tab='home',wk=LAST,ow=LAST,dbDoc=null,mode='local';
 const seed=()=>({users:[{id:'u0',name:'Administrator',username:'admin',password:'admin123',role:'admin',active:true}],years:[{id:'y1',name:'Year 1'},{id:'y2',name:'Year 2'}],courses:[],sections:[],plans:{},actuals:{},unlocks:{},holidays:[],weeklyOff:0,termStart:'2026-07-01'});
 window.addEventListener('unhandledrejection',e=>toast('Error: '+((e.reason&&e.reason.message)||e.reason),1));window.addEventListener('error',e=>toast('Error: '+e.message,1));
 const norm=()=>{['users','years','courses','sections','holidays'].forEach(k=>{if(!Array.isArray(S[k]))S[k]=[]});['plans','actuals','unlocks'].forEach(k=>{if(!S[k]||typeof S[k]!=='object'||Array.isArray(S[k]))S[k]={}});if(S.weeklyOff==null||isNaN(S.weeklyOff))S.weeklyOff=0;if(!S.termStart)S.termStart='2026-07-01'};
@@ -141,7 +141,7 @@ function headV(){const mine=S.sections.filter(s=>s.headId===me.id);
   <td><input type="number" min="0" max="${MAXH}" step="0.5" id="aa_${id}" value="${v(a.a)}" ${ae?'':'disabled'} oninput="chk('${id}')"></td>
   <td><input type="number" min="0" max="${MAXH}" step="0.5" id="at_${id}" value="${v(a.t)}" ${ae?'':'disabled'} oninput="chk('${id}')"></td>
   <td><textarea id="rm_${id}" placeholder="Reason if load not covered…" ${ae?'':'disabled'}>${esc(a.remark||'')}</textarea><div class="mut" id="vr_${id}">${short?'Shortfall (Acad+Training combined, compensation allowed): '+((a.a+a.t)-(p.a+p.t)).toFixed(1)+' h':''}</div></td>
-  <td>${pe||ae?`<button onclick="saveRow('${id}')">Save</button>`:'<span class="mut">🔒 Locked</span>'}</td></tr>`}).join('');
+  <td>${pe||ae?`<button onclick="saveRow('${id}')">Save</button>`:''} ${(pe&&p.a!=null)||(ae&&a.a!=null)?`<button class="dng" onclick="deleteMyRecord('${id}')">Delete</button>`:''} ${!pe&&!ae?'<span class="mut">🔒 Locked</span>':''}</td></tr>`}).join('');
  return`${pend.length?`<div class="al b">⚠ Actual load for last week (${fmt(LAST)}) is pending for ${pend.length} section(s): ${pend.map(s=>esc(s.name)).join(', ')}. Submit before it locks after this week.</div>`:''}
  ${noPlan.length?`<div class="al w">Planned load for the current week (${fmt(CUR)}) is not defined for ${noPlan.length} section(s).</div>`:''}
  <div class="card"><div class="row"><b>Week:</b><select onchange="wk=this.value;render()">${weeks.map(w=>`<option value="${w}" ${w===wk?'selected':''}>${fmt(w)}${w===CUR?' (This week)':w===LAST?' (Last week)':w>CUR?' (Upcoming)':''}</option>`).join('')}</select>
@@ -160,6 +160,15 @@ async function saveRow(id){const g=x=>{const e=$('#'+x+'_'+id);return e&&!e.disa
   const r=$('#rm_'+id).value.trim();if(((aa+at)<(p.a+p.t))&&r.length<5)return toast('Combined load (Academic+Training) not fully covered — please enter a remark (min 5 characters)',1);
   S.actuals[k]={a:aa,t:at,remark:r,by:me.id,ts:Date.now()}}
  await save();toast('Saved');render()}
+async function deleteMyRecord(id){const s=S.sections.find(x=>x.id===id);if(!s||s.headId!==me.id)return toast('Not your section',1);
+ const pe=planEd(id,wk),ae=actEd(id,wk);
+ if(!pe&&!ae)return toast('This week is locked — ask the admin to unlock it first',1);
+ const k=K(id,wk),hasP=S.plans[k]!=null,hasA=S.actuals[k]!=null;
+ const parts=[];if(pe&&hasP)parts.push('planned');if(ae&&hasA)parts.push('actual');
+ if(!parts.length)return toast('Nothing to delete for this week',1);
+ if(!confirm(`Delete the ${parts.join(' and ')} load you entered for this section and week? This cannot be undone.`))return;
+ if(pe)delete S.plans[k];if(ae)delete S.actuals[k];
+ await save();toast('Deleted');render()}
 /* ---------- PROGRESS REPORT (compensation-aware, cumulative) ---------- */
 function progressCalc(sectionIds){
  const weeks=[...new Set(Object.keys(S.plans).filter(k=>sectionIds.includes(k.split('|')[0])).map(k=>k.split('|')[1]))].sort();
@@ -359,9 +368,15 @@ function adminHome(){const weeks=[];for(let w=iso(mon(S.termStart));w<=addW(CUR,
  let list=S.sections.filter(s=>(!ovYear||s.yearId===ovYear)&&(!ovCourse||s.courseId===ovCourse)&&(!ovHead||s.headId===ovHead));
  if(ovStatus)list=list.filter(s=>status(s.id,ow)[0]===ovStatus);
  if(ovSearch){const q=ovSearch.toLowerCase();list=list.filter(s=>{const hd=S.users.find(u=>u.id===s.headId);return secLabel(s).toLowerCase().includes(q)||(hd&&hd.name.toLowerCase().includes(q))})}
- const rows=list.map(s=>{const st=status(s.id,ow),p=S.plans[K(s.id,ow)]||{},a=S.actuals[K(s.id,ow)]||{},u=unl(s.id,ow),hd=S.users.find(x=>x.id===s.headId);
+ const rows=list.map(s=>{const st=status(s.id,ow),p=S.plans[K(s.id,ow)]||{},a=S.actuals[K(s.id,ow)]||{},u=unl(s.id,ow),hd=S.users.find(x=>x.id===s.headId),id=s.id;
+ if(edRec===id){const v=(x)=>x??'';
+  return`<tr><td>${secLabel(s)}</td><td>${hd?esc(hd.name):'<span class="tag b">Unmapped</span>'}</td>
+  <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_pa" value="${v(p.a)}" style="width:56px"> / <input type="number" min="0" max="${MAXH}" step="0.5" id="er_pt" value="${v(p.t)}" style="width:56px"></td>
+  <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_aa" value="${v(a.a)}" style="width:56px"> / <input type="number" min="0" max="${MAXH}" step="0.5" id="er_at" value="${v(a.t)}" style="width:56px"></td>
+  <td colspan="2"><textarea id="er_rm" placeholder="Remark">${esc(a.remark||'')}</textarea></td>
+  <td><button onclick="saveRecord('${id}')">Save</button> <button class="sec" onclick="edRec='';render()">Cancel</button></td></tr>`}
  return`<tr><td>${secLabel(s)}</td><td>${hd?esc(hd.name):'<span class="tag b">Unmapped</span>'}</td><td>${p.a??'—'} / ${p.t??'—'}</td><td>${a.a??'—'} / ${a.t??'—'}</td><td><span class="tag ${st[1]}">${st[0]}</span></td><td class="mut">${esc(a.remark||'')}</td>
- <td>${ow<CUR&&ow!==LAST||ow===LAST?`<button class="${u?'dng':'sec'}" onclick="toggleUnlock('${s.id}')">${u?'Lock':'Unlock'}</button>`:'—'}</td></tr>`}).join('');
+ <td>${ow<CUR&&ow!==LAST||ow===LAST?`<button class="${u?'dng':'sec'}" onclick="toggleUnlock('${s.id}')">${u?'Lock':'Unlock'}</button>`:''} <button class="sec" onclick="edRec='${id}';render()">Edit</button> ${(p.a!=null||a.a!=null)?`<button class="dng" onclick="deleteRecord('${id}')">Delete</button>`:''}</td></tr>`}).join('');
  const late=S.sections.filter(s=>{const x=status(s.id,LAST)[0];return x==='Actual pending'||x==='Not planned'}).length;
  const heads=S.users.filter(u=>u.role==='head'&&u.active);
  const statuses=['Completed','Shortfall','Actual pending','Planned','Not planned'];
@@ -375,6 +390,21 @@ function adminHome(){const weeks=[];for(let w=iso(mon(S.termStart));w<=addW(CUR,
  ${(ovYear||ovCourse||ovHead||ovStatus||ovSearch)?`<button class="sec" onclick="ovYear='';ovCourse='';ovHead='';ovStatus='';ovSearch='';render()">Clear filters</button>`:''}</div>
  <div class="tw"><table><tr><th>Section</th><th>Head</th><th>Planned</th><th>Actual</th><th>Status</th><th>Remark</th><th>Access</th></tr>${rows||`<tr><td colspan=7 class="mut">${S.sections.length?'No section matches this filter.':'No sections yet. Add them in Section Mapping.'}</td></tr>`}</table></div></div>`}
 async function toggleUnlock(id){const k=K(id,ow);if(S.unlocks[k])delete S.unlocks[k];else S.unlocks[k]=true;await save();render()}
+async function saveRecord(id){const g=x=>{const v=$('#er_'+x).value;return v===''?null:parseFloat(v)};
+ const pa=g('pa'),pt=g('pt'),aa=g('aa'),at=g('at'),rm=$('#er_rm').value.trim();
+ const vals=[pa,pt,aa,at];
+ if(vals.some(v=>v!==null&&isNaN(v)))return toast('One of the hours values is not a number',1);
+ if(vals.some(v=>v!==null&&(v<0||v>MAXH)))return toast(`Hours must be between 0 and ${MAXH}`,1);
+ if((pa!==null)!==(pt!==null))return toast('Planned Academic and Training hours must both be filled in, or both left blank',1);
+ if((aa!==null)!==(at!==null))return toast('Actual Academic and Training hours must both be filled in, or both left blank',1);
+ const hasPlan=pa!==null&&pt!==null,hasActual=aa!==null&&at!==null;
+ if(hasPlan&&hasActual&&((aa+at)<(pa+pt))&&rm.length<5)return toast('Combined Actual hours are below combined Planned — a remark (5+ characters) is required',1);
+ const k=K(id,ow);
+ if(hasPlan)S.plans[k]={a:pa,t:pt,by:me.id,ts:Date.now()};else delete S.plans[k];
+ if(hasActual)S.actuals[k]={a:aa,t:at,remark:rm,by:me.id,ts:Date.now()};else delete S.actuals[k];
+ edRec='';await save();toast('Record updated');render()}
+async function deleteRecord(id){if(!confirm('Delete the planned and actual load for this section and week? This cannot be undone.'))return;
+ const k=K(id,ow);delete S.plans[k];delete S.actuals[k];await save();toast('Record deleted');render()}
 let edIt='',edSec='',edUsr='';
 function master(kind,label){const inUse=id=>S.sections.some(s=>(kind==='years'?s.yearId:s.courseId)===id);
  return`<div class="card"><div class="row"><input id="mn" placeholder="New ${label} name"><button onclick="addM('${kind}')">Add</button></div><table>${S[kind].map(x=>edIt===kind+':'+x.id?
