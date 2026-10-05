@@ -170,8 +170,10 @@ async function deleteMyRecord(id){const s=S.sections.find(x=>x.id===id);if(!s||s
  if(pe)delete S.plans[k];if(ae)delete S.actuals[k];
  await save();toast('Deleted');render()}
 /* ---------- PROGRESS REPORT (compensation-aware, cumulative) ---------- */
+const isValidWeekKey=w=>/^\d{4}-\d{2}-\d{2}$/.test(w)&&!isNaN(new Date(w+'T12:00:00'));
 function progressCalc(sectionIds){
- const weeks=[...new Set(Object.keys(S.plans).filter(k=>sectionIds.includes(k.split('|')[0])).map(k=>k.split('|')[1]))].sort();
+ const weeks=[...new Set(Object.keys(S.plans).filter(k=>sectionIds.includes(k.split('|')[0])).map(k=>k.split('|')[1]))]
+  .filter(isValidWeekKey).sort((a,b)=>new Date(a+'T12:00:00')-new Date(b+'T12:00:00'));
  let cp=0,ca=0;
  const rows=weeks.map(w=>{
   let pa=0,pt=0,aa=0,at=0,hasA=false;
@@ -183,6 +185,7 @@ function progressCalc(sectionIds){
  });
  return{rows,totals:{planned:cp,actual:ca,balance:ca-cp}};
 }
+function recordEditable(sid,w){if(me.role==='admin')return{pe:true,ae:true};const pe=planEd(sid,w),ae=actEd(sid,w)&&!!S.plans[K(sid,w)];return{pe,ae}}
 function progressTable(sectionIds,label,fromWk,toWk){
  if(!sectionIds.length)return`<div class="al w">No sections to show.</div>`;
  const{rows:allRows}=progressCalc(sectionIds);
@@ -190,21 +193,56 @@ function progressTable(sectionIds,label,fromWk,toWk){
  const filtered=(fromWk||toWk);
  const rows=allRows.filter(r=>(!fromWk||r.w>=fromWk)&&(!toWk||r.w<=toWk));
  if(!rows.length)return`<div class="al w">No weeks match this filter for ${esc(label)}.</div>`;
+ const editSid=sectionIds.length===1?sectionIds[0]:null;
  const cell=(actual,planned,due,has)=>{if(!due)return'<td class="mut">—</td>';if(!has)return'<td class="mut">—</td>';const ok=actual>=planned;return`<td style="color:${ok?'var(--ok)':'var(--bad)'};font-weight:600">${actual.toFixed(1)} h</td>`};
- const trs=rows.map(r=>`<tr><td>${fmt(r.w)}${r.w===CUR?' <span class="mut">(current)</span>':r.w===LAST?' <span class="mut">(last)</span>':''}</td>
+ const trs=rows.map(r=>{
+  if(editSid&&edRec===K(editSid,r.w)){const v=(x)=>x??'';
+   return`<tr><td>${fmt(r.w)}</td>
+   <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_pa" value="${v(r.pa)}" style="width:56px"></td>
+   <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_aa" value="${v(r.hasA?r.aa:'')}" style="width:56px"></td>
+   <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_pt" value="${v(r.pt)}" style="width:56px"></td>
+   <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_at" value="${v(r.hasA?r.at:'')}" style="width:56px"></td>
+   <td colspan="2"><textarea id="er_rm" placeholder="Remark">${esc((S.actuals[K(editSid,r.w)]||{}).remark||'')}</textarea></td>
+   <td><button onclick="saveRecordAt('${editSid}','${r.w}')">Save</button> <button class="sec" onclick="edRec='';render()">Cancel</button></td></tr>`}
+  const canEdit=editSid&&(me.role==='admin'||recordEditable(editSid,r.w).pe||recordEditable(editSid,r.w).ae);
+  return`<tr><td>${fmt(r.w)}${r.w===CUR?' <span class="mut">(current)</span>':r.w===LAST?' <span class="mut">(last)</span>':''}</td>
   <td>${r.pa.toFixed(1)} h</td>
   ${cell(r.aa,r.pa,r.due,r.hasA)}
   <td>${r.pt.toFixed(1)} h</td>
   ${cell(r.at,r.pt,r.due,r.hasA)}
   <td><span class="tag ${r.color}">${r.label}</span></td>
-  <td>${r.due?`<b style="color:${r.cumA>=r.cumP?'var(--ok)':'var(--bad)'}">${(r.cumA-r.cumP>=0?'+':'')+(r.cumA-r.cumP).toFixed(1)} h</b>`:'—'}</td></tr>`).join('');
+  <td>${r.due?`<b style="color:${r.cumA>=r.cumP?'var(--ok)':'var(--bad)'}">${(r.cumA-r.cumP>=0?'+':'')+(r.cumA-r.cumP).toFixed(1)} h</b>`:'—'}${canEdit?` <button class="sec" onclick="edRec='${K(editSid,r.w)}';render()">Edit</button> <button class="dng" onclick="deleteRecordAt('${editSid}','${r.w}')">Delete</button>`:''}</td></tr>`}).join('');
  const totA=rows.reduce((s,r)=>s+r.pa,0),totAA=rows.reduce((s,r)=>s+(r.due&&r.hasA?r.aa:0),0),totT=rows.reduce((s,r)=>s+r.pt,0),totAT=rows.reduce((s,r)=>s+(r.due&&r.hasA?r.at:0),0),totBal=totAA+totAT-(totA+totT);
- return`<div class="tw"><table><tr><th>Week</th><th>Plan Academic</th><th>Actual Academic</th><th>Plan Training</th><th>Actual Training</th><th>Status</th><th>Running balance</th></tr>${trs}
+ return`<div class="tw"><table><tr><th>Week</th><th>Plan Academic</th><th>Actual Academic</th><th>Plan Training</th><th>Actual Training</th><th>Status</th><th>Running balance${editSid?' / Actions':''}</th></tr>${trs}
  <tr style="font-weight:600;background:var(--bg)"><td>Total (${filtered?'shown weeks':'all weeks'})</td><td>${totA.toFixed(1)} h</td>
  <td style="color:${totAA>=totA?'var(--ok)':'var(--bad)'}">${totAA.toFixed(1)} h</td><td>${totT.toFixed(1)} h</td>
  <td style="color:${totAT>=totT?'var(--ok)':'var(--bad)'}">${totAT.toFixed(1)} h</td>
  <td><span class="tag ${totBal>=0?'ok':'b'}">${totBal>=0?'On track':'Behind'}</span></td>
- <td><b style="color:${totBal>=0?'var(--ok)':'var(--bad)'}">${(totBal>=0?'+':'')+totBal.toFixed(1)} h</b></td></tr></table></div>`}
+ <td><b style="color:${totBal>=0?'var(--ok)':'var(--bad)'}">${(totBal>=0?'+':'')+totBal.toFixed(1)} h</b></td></tr></table></div>
+ ${editSid?'<p class="mut">Edit or delete a specific week\'s record directly above — useful for correcting bad backlog imports. Heads can only touch weeks they would normally be allowed to edit; admins can edit or delete any week.</p>':''}`}
+async function saveRecordAt(sid,w){const g=x=>{const v=$('#er_'+x).value;return v===''?null:parseFloat(v)};
+ const pa=g('pa'),pt=g('pt'),aa=g('aa'),at=g('at'),rm=$('#er_rm').value.trim();
+ const vals=[pa,pt,aa,at];
+ if(vals.some(v=>v!==null&&isNaN(v)))return toast('One of the hours values is not a number',1);
+ if(vals.some(v=>v!==null&&(v<0||v>MAXH)))return toast(`Hours must be between 0 and ${MAXH}`,1);
+ if((pa!==null)!==(pt!==null))return toast('Planned Academic and Training hours must both be filled in, or both left blank',1);
+ if((aa!==null)!==(at!==null))return toast('Actual Academic and Training hours must both be filled in, or both left blank',1);
+ const{pe,ae}=recordEditable(sid,w);
+ if(!pe&&(pa!==null||pt!==null))return toast('You are not allowed to edit the planned load for this week',1);
+ if(!ae&&(aa!==null||at!==null))return toast('You are not allowed to edit the actual load for this week',1);
+ const hasPlan=pa!==null&&pt!==null,hasActual=aa!==null&&at!==null;
+ if(hasPlan&&hasActual&&((aa+at)<(pa+pt))&&rm.length<5)return toast('Combined Actual hours are below combined Planned — a remark (5+ characters) is required',1);
+ const k=K(sid,w);
+ if(pe){if(hasPlan)S.plans[k]={a:pa,t:pt,by:me.id,ts:Date.now()};else delete S.plans[k]}
+ if(ae){if(hasActual)S.actuals[k]={a:aa,t:at,remark:rm,by:me.id,ts:Date.now()};else delete S.actuals[k]}
+ edRec='';await save();toast('Record updated');render()}
+async function deleteRecordAt(sid,w){const{pe,ae}=recordEditable(sid,w);
+ if(!pe&&!ae)return toast('This week is locked — ask the admin to unlock it first',1);
+ const k=K(sid,w),parts=[];if(pe&&S.plans[k]!=null)parts.push('planned');if(ae&&S.actuals[k]!=null)parts.push('actual');
+ if(!parts.length)return toast('Nothing to delete for this week',1);
+ if(!confirm(`Delete the ${parts.join(' and ')} load for this section and week? This cannot be undone.`))return;
+ if(pe)delete S.plans[k];if(ae)delete S.actuals[k];
+ await save();toast('Deleted');render()}
 function weekOpts(sel,ph){const weeks=[];for(let w=iso(mon(S.termStart));w<=addW(CUR,4);w=addW(w,1))weeks.push(w);
  return`<option value="">${ph}</option>${weeks.map(w=>`<option value="${w}" ${w===sel?'selected':''}>${fmt(w)}</option>`).join('')}`}
 function reportV(){
@@ -301,11 +339,25 @@ async function runImport(){
   okCount++;results.push({row:sheetRow,ok:true,msg:`${secLabel(sec)} — ${fmt(weekKey)}`})}
  impResults=results;impSummary={ok:okCount,fail:results.length-okCount,created};
  await save();impFile=null;render()}
-function importV(){
+function scanBadRecords(){const bad=[];
+ const check=(store,kind)=>Object.keys(store).forEach(k=>{const[sid,w]=k.split('|');
+  const reasons=[];
+  if(!isValidWeekKey(w))reasons.push('malformed week value');
+  if(!S.sections.find(s=>s.id===sid))reasons.push('section no longer exists');
+  if(reasons.length)bad.push({k,kind,sid,w,reasons:reasons.join(', ')})});
+ check(S.plans,'Planned');check(S.actuals,'Actual');
+ return bad}
+function importV(){const bad=scanBadRecords();
  return`<div class="al g">Load historical weekly Plan/Actual data in bulk from a spreadsheet. Any Year, Course or Section named in the file that doesn't already exist is created automatically.</div>
  <div class="card"><b>1. Get the template</b><p class="mut">Download it, fill in one row per Section per Week, then come back and upload it below.</p><button class="sec" onclick="downloadTemplate()">Download template (.xlsx)</button></div>
  <div class="card"><b>2. Upload your filled-in file</b><div class="row"><input type="file" id="impInput" accept=".xlsx,.xls" onchange="onImpFile(this)"><button onclick="runImport()">Import</button></div>${impName?`<div class="mut">Selected: ${esc(impName)}</div>`:''}</div>
- ${impResults?importResultsV():''}`}
+ ${impResults?importResultsV():''}
+ <div class="card"><b>Data health check</b><p class="mut">Scans for records with a broken week value or pointing at a deleted section — these can happen from an old import or testing data, and can throw off week ordering and totals elsewhere in the app.</p>
+ ${bad.length?`<div class="al b">${bad.length} problem record(s) found.</div><div class="tw"><table><tr><th>Type</th><th>Section ID</th><th>Week value</th><th>Issue</th></tr>${bad.map(b=>`<tr><td>${b.kind}</td><td class="mut">${esc(b.sid)}</td><td class="mut">${esc(String(b.w))}</td><td>${esc(b.reasons)}</td></tr>`).join('')}</table></div><button class="dng" onclick="cleanBadRecords()">Delete all ${bad.length} flagged record(s)</button>`:'<div class="al g">No problem records found.</div>'}</div>`}
+async function cleanBadRecords(){const bad=scanBadRecords();if(!bad.length)return;
+ if(!confirm(`Permanently delete ${bad.length} flagged record(s)? This cannot be undone.`))return;
+ bad.forEach(b=>{if(b.kind==='Planned')delete S.plans[b.k];else delete S.actuals[b.k]});
+ await save();toast('Cleaned up');render()}
 function importResultsV(){const{ok,fail,created}=impSummary,badRows=impResults.filter(r=>!r.ok);
  return`<div class="card"><b>Import results</b>
  <div class="row"><span class="tag ok">${ok} imported</span>${fail?`<span class="tag b">${fail} skipped</span>`:''}${created.years||created.courses||created.sections?`<span class="tag">${created.years} new Year(s), ${created.courses} new Course(s), ${created.sections} new Section(s) created</span>`:''}</div>
@@ -483,7 +535,7 @@ function mapV(){const heads=S.users.filter(u=>u.role==='head'&&u.active);
 async function assignS(id,on){S.sections.find(s=>s.id===id).headId=on?mh:'';await save();toast(on?'Section assigned':'Section unassigned');render()}
 async function assignYear(y){S.sections.filter(s=>s.yearId===y).forEach(s=>s.headId=mh);await save();toast('Year assigned');render()}
 /* ---------- LEADERBOARD ---------- */
-function lbV(){const ok=w=>w<CUR&&(lbp==='all'||(lbp==='last'?w===LAST:w>=addW(CUR,-4))),sc={};
+function lbV(){const ok=w=>isValidWeekKey(w)&&w<CUR&&(lbp==='all'||(lbp==='last'?w===LAST:w>=addW(CUR,-4))),sc={};
  Object.keys(S.plans).forEach(k=>{const[sid,w]=k.split('|');if(!ok(w))return;const p=S.plans[k],a=S.actuals[k],o=sc[sid]=sc[sid]||{p:0,c:0,n:0,s:0};o.p+=p.a+p.t;o.n++;if(a){o.s++;o.c+=Math.min(a.a+a.t,p.a+p.t)}});
  const fin=(name,o,mine)=>({name,mine,p:o.p,c:o.c,n:o.n,s:o.s,pct:o.p?o.c/o.p*100:0,sub:o.n?o.s/o.n*100:0});
  const heads=S.users.filter(u=>u.role==='head'&&u.active).map(u=>{const t={p:0,c:0,n:0,s:0};S.sections.filter(s=>s.headId===u.id).forEach(s=>{const o=sc[s.id];if(o){t.p+=o.p;t.c+=o.c;t.n+=o.n;t.s+=o.s}});return fin(u.name,t,u.id===me.id)});
