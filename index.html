@@ -68,9 +68,9 @@ const iso=d=>{const z=new Date(d);return z.getFullYear()+'-'+String(z.getMonth()
 const mon=d=>{const x=new Date(d);x.setHours(12,0,0,0);x.setDate(x.getDate()-((x.getDay()+6)%7));return x};
 const addW=(k,n)=>{const x=new Date(k+'T12:00:00');x.setDate(x.getDate()+7*n);return iso(x)};
 const CUR=iso(mon(new Date())),LAST=addW(CUR,-1);
-const fmt=k=>{const a=new Date(k+'T12:00:00'),b=new Date(k+'T12:00:00');b.setDate(b.getDate()+6);const o={day:'numeric',month:'short'};return a.toLocaleDateString('en-GB',o)+' – '+b.toLocaleDateString('en-GB',o)};
+const fmt=k=>{const a=new Date(k+'T12:00:00'),b=new Date(k+'T12:00:00');b.setDate(b.getDate()+5);const o={day:'numeric',month:'short'};return a.toLocaleDateString('en-GB',o)+' – '+b.toLocaleDateString('en-GB',o)};
 const MAXH=80;
-let mh='',lbp='last',rsec='',rhd='',rFrom='',rTo='',calMonth=CUR.slice(0,8)+'01',impFile=null,impName='',impResults=null,impSummary=null,ovYear='',ovCourse='',ovHead='',ovStatus='',ovSearch='',secSearch='',usrSearch='',hSec='',edRec='',S=null,me=null,tab='home',wk=LAST,ow=LAST,dbDoc=null,mode='local';
+let mh='',lbp='last',rsec='',rhd='',rFrom='',rTo='',calMonth=CUR.slice(0,8)+'01',impFile=null,impName='',impResults=null,impSummary=null,impPreview=null,ovYear='',ovCourse='',ovHead='',ovStatus='',ovSearch='',secSearch='',usrSearch='',hSec='',edRec='',S=null,me=null,tab='home',wk=LAST,ow=LAST,dbDoc=null,mode='local';
 const seed=()=>({users:[{id:'u0',name:'Administrator',username:'admin',password:'admin123',role:'admin',active:true}],years:[{id:'y1',name:'Year 1'},{id:'y2',name:'Year 2'}],courses:[],sections:[],plans:{},actuals:{},unlocks:{},holidays:[],weeklyOff:0,termStart:'2026-07-01'});
 window.addEventListener('unhandledrejection',e=>toast('Error: '+((e.reason&&e.reason.message)||e.reason),1));window.addEventListener('error',e=>toast('Error: '+e.message,1));
 const norm=()=>{['users','years','courses','sections','holidays'].forEach(k=>{if(!Array.isArray(S[k]))S[k]=[]});['plans','actuals','unlocks'].forEach(k=>{if(!S[k]||typeof S[k]!=='object'||Array.isArray(S[k]))S[k]={}});if(S.weeklyOff==null||isNaN(S.weeklyOff))S.weeklyOff=0;if(!S.termStart)S.termStart='2026-07-01'};
@@ -170,8 +170,10 @@ async function deleteMyRecord(id){const s=S.sections.find(x=>x.id===id);if(!s||s
  if(pe)delete S.plans[k];if(ae)delete S.actuals[k];
  await save();toast('Deleted');render()}
 /* ---------- PROGRESS REPORT (compensation-aware, cumulative) ---------- */
+const isValidWeekKey=w=>/^\d{4}-\d{2}-\d{2}$/.test(w)&&!isNaN(new Date(w+'T12:00:00'));
 function progressCalc(sectionIds){
- const weeks=[...new Set(Object.keys(S.plans).filter(k=>sectionIds.includes(k.split('|')[0])).map(k=>k.split('|')[1]))].sort();
+ const weeks=[...new Set(Object.keys(S.plans).filter(k=>sectionIds.includes(k.split('|')[0])).map(k=>k.split('|')[1]))]
+  .filter(isValidWeekKey).sort((a,b)=>new Date(a+'T12:00:00')-new Date(b+'T12:00:00'));
  let cp=0,ca=0;
  const rows=weeks.map(w=>{
   let pa=0,pt=0,aa=0,at=0,hasA=false;
@@ -294,14 +296,29 @@ function downloadTemplate(){
  XLSX.utils.book_append_sheet(wb,wsI,'Instructions');
  XLSX.utils.book_append_sheet(wb,ws,'Backlog');
  XLSX.writeFile(wb,'backlog-import-template.xlsx')}
-function onImpFile(el){impFile=el.files[0]||null;impName=impFile?impFile.name:'';impResults=null;render()}
+function onImpFile(el){impFile=el.files[0]||null;impName=impFile?impFile.name:'';impResults=null;impPreview=null;render()}
 function impNum(v){if(v===''||v===undefined||v===null)return null;const n=typeof v==='number'?v:parseFloat(v);return isNaN(n)?NaN:n}
+const MONTH_MAP={jan:1,january:1,feb:2,february:2,mar:3,march:3,apr:4,april:4,may:5,jun:6,june:6,jul:7,july:7,aug:8,august:8,sep:9,sept:9,september:9,oct:10,october:10,nov:11,november:11,dec:12,december:12};
 function toImpDate(v){
  if(v&&typeof v==='object'&&typeof v.getTime==='function'&&!isNaN(v.getTime()))return iso(v);
  if(typeof v==='number'&&window.XLSX&&XLSX.SSF){try{const d=XLSX.SSF.parse_date_code(v);if(d&&d.y)return`${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`}catch(e){}}
- if(typeof v==='string'&&v.trim()){const s=v.trim(),d=new Date(s.length<=10?s+'T12:00:00':s);if(!isNaN(d))return iso(d)}
+ if(typeof v==='string'&&v.trim()){
+  const s=v.trim();
+  // Free-text week ranges ("16-17 july", "31-3 Sept", "3rd August") are common in real backlog
+  // sheets but JS's native Date() parses them unpredictably (wrong year, wrong month, or fails
+  // outright). Find every "<day><st/nd/rd/th?> <month name>" occurrence and anchor on the LAST
+  // one — for a range like "16-17 july" that's "17 july"; for "31-3 Sept" that's "3 Sept".
+  const yrM=s.match(/(20\d{2})/);const year=yrM?parseInt(yrM[1],10):new Date(S.termStart+'T12:00:00').getFullYear();
+  const re=/(\d{1,2})(?:st|nd|rd|th)?\s*[-–]?\s*([A-Za-z]{3,9})/g;
+  let m,last=null;
+  while((m=re.exec(s))){const mo=MONTH_MAP[m[2].toLowerCase().slice(0,3)];if(mo)last={d:parseInt(m[1],10),mo}}
+  if(last){const dt=new Date(year,last.mo-1,last.d,12,0,0);if(!isNaN(dt))return iso(dt)}
+  // No recognizable month name found — fall back to native parsing, which is reliable for
+  // clean unambiguous dates like "2026-08-10".
+  const d=new Date(s.length<=10?s+'T12:00:00':s);if(!isNaN(d))return iso(d)
+ }
  return null}
-async function runImport(){
+async function parseImportFile(){
  if(!impFile)return toast('Choose a file first',1);
  if(!window.XLSX)return toast('The spreadsheet library failed to load — check your internet connection and try again',1);
  let buf;try{buf=await impFile.arrayBuffer()}catch(e){return toast('Could not read the selected file',1)}
@@ -309,39 +326,77 @@ async function runImport(){
  const wsName=wb.SheetNames.includes('Backlog')?'Backlog':wb.SheetNames[0];
  const rows=XLSX.utils.sheet_to_json(wb.Sheets[wsName],{header:1,raw:true,defval:''});
  if(rows.length<2)return toast('No data rows found in the sheet',1);
- if(!confirm(`This will read up to ${rows.length-1} row(s) from "${wsName}" and add or update weekly load data. Continue?`))return;
- const results=[];let created={years:0,courses:0,sections:0},okCount=0;
+ const badRows=[],validRows=[],newYearNames=[],newCourseNames=[],newSectionCombos=[];
+ const stagedYearNames=new Set(S.years.map(y=>y.name.toLowerCase()));
+ const stagedCourseNames=new Set(S.courses.map(c=>c.name.toLowerCase()));
+ const stagedSectionKeys=new Set(S.sections.map(s=>`${nm('years',s.yearId).toLowerCase()}|${nm('courses',s.courseId).toLowerCase()}|${s.name.toLowerCase()}`));
  for(let i=1;i<rows.length;i++){const r=rows[i],sheetRow=i+1;
   const yearName=String(r[0]||'').trim(),courseName=String(r[1]||'').trim(),sectionName=String(r[2]||'').trim(),headUser=String(r[3]||'').trim().toLowerCase();
   const weekRaw=r[4],remark=String(r[9]||'').trim();
   if(!yearName&&!courseName&&!sectionName&&!weekRaw)continue;
-  if(!yearName||!courseName||!sectionName){results.push({row:sheetRow,ok:false,msg:'Missing Year, Course or Section'});continue}
+  if(!yearName||!courseName||!sectionName){badRows.push({row:sheetRow,msg:'Missing Year, Course or Section'});continue}
   const wkDate=toImpDate(weekRaw);
-  if(!wkDate){results.push({row:sheetRow,ok:false,msg:'Invalid or missing week date'});continue}
+  if(!wkDate){badRows.push({row:sheetRow,msg:'Invalid or missing week date'});continue}
   const weekKey=iso(mon(wkDate));
   const pa=impNum(r[5]),pt=impNum(r[6]),aa=impNum(r[7]),at=impNum(r[8]);
-  if([pa,pt,aa,at].some(v=>typeof v==='number'&&isNaN(v))){results.push({row:sheetRow,ok:false,msg:'One of the hours values is not a number'});continue}
-  if([pa,pt,aa,at].some(v=>v!==null&&(v<0||v>MAXH))){results.push({row:sheetRow,ok:false,msg:`Hours must be between 0 and ${MAXH}`});continue}
-  if((pa!==null)!==(pt!==null)){results.push({row:sheetRow,ok:false,msg:'Planned Academic and Training hours must both be filled in, or both left blank'});continue}
-  if((aa!==null)!==(at!==null)){results.push({row:sheetRow,ok:false,msg:'Actual Academic and Training hours must both be filled in, or both left blank'});continue}
+  if([pa,pt,aa,at].some(v=>typeof v==='number'&&isNaN(v))){badRows.push({row:sheetRow,msg:'One of the hours values is not a number'});continue}
+  if([pa,pt,aa,at].some(v=>v!==null&&(v<0||v>MAXH))){badRows.push({row:sheetRow,msg:`Hours must be between 0 and ${MAXH}`});continue}
+  if((pa!==null)!==(pt!==null)){badRows.push({row:sheetRow,msg:'Planned Academic and Training hours must both be filled in, or both left blank'});continue}
+  if((aa!==null)!==(at!==null)){badRows.push({row:sheetRow,msg:'Actual Academic and Training hours must both be filled in, or both left blank'});continue}
   const hasPlan=pa!==null&&pt!==null,hasActual=aa!==null&&at!==null;
-  if(!hasPlan&&!hasActual){results.push({row:sheetRow,ok:false,msg:'No Planned or Actual hours given — nothing to import'});continue}
-  if(hasPlan&&hasActual&&((aa+at)<(pa+pt))&&remark.length<5){results.push({row:sheetRow,ok:false,msg:'Combined Actual hours are below combined Planned — a remark (5+ characters) is required'});continue}
-  let yr=S.years.find(y=>y.name.toLowerCase()===yearName.toLowerCase());if(!yr){yr={id:uid(),name:yearName};S.years.push(yr);created.years++}
-  let co=S.courses.find(c=>c.name.toLowerCase()===courseName.toLowerCase());if(!co){co={id:uid(),name:courseName};S.courses.push(co);created.courses++}
-  let sec=S.sections.find(s=>s.yearId===yr.id&&s.courseId===co.id&&s.name.toLowerCase()===sectionName.toLowerCase());
-  if(!sec){sec={id:uid(),name:sectionName,yearId:yr.id,courseId:co.id,headId:''};S.sections.push(sec);created.sections++}
-  if(!sec.headId&&headUser){const hu=S.users.find(u=>u.role==='head'&&u.active&&u.username.toLowerCase()===headUser);if(hu)sec.headId=hu.id}
-  if(hasPlan)S.plans[K(sec.id,weekKey)]={a:pa,t:pt,by:me.id,ts:Date.now(),src:'import'};
-  if(hasActual)S.actuals[K(sec.id,weekKey)]={a:aa,t:at,remark,by:me.id,ts:Date.now(),src:'import'};
-  okCount++;results.push({row:sheetRow,ok:true,msg:`${secLabel(sec)} — ${fmt(weekKey)}`})}
+  if(!hasPlan&&!hasActual){badRows.push({row:sheetRow,msg:'No Planned or Actual hours given — nothing to import'});continue}
+  if(hasPlan&&hasActual&&((aa+at)<(pa+pt))&&remark.length<5){badRows.push({row:sheetRow,msg:'Combined Actual hours are below combined Planned — a remark (5+ characters) is required'});continue}
+  if(!stagedYearNames.has(yearName.toLowerCase())){newYearNames.push(yearName);stagedYearNames.add(yearName.toLowerCase())}
+  if(!stagedCourseNames.has(courseName.toLowerCase())){newCourseNames.push(courseName);stagedCourseNames.add(courseName.toLowerCase())}
+  const secKey=`${yearName.toLowerCase()}|${courseName.toLowerCase()}|${sectionName.toLowerCase()}`;
+  if(!stagedSectionKeys.has(secKey)){newSectionCombos.push({year:yearName,course:courseName,section:sectionName});stagedSectionKeys.add(secKey)}
+  validRows.push({sheetRow,yearName,courseName,sectionName,headUser,weekKey,pa,pt,aa,at,remark})}
+ impPreview={wsName,validRows,badRows,newYearNames,newCourseNames,newSectionCombos};render()}
+async function confirmImport(){if(!impPreview)return;const{validRows,badRows}=impPreview;
+ const results=badRows.map(b=>({row:b.row,ok:false,msg:b.msg}));let created={years:0,courses:0,sections:0},okCount=0;
+ for(const row of validRows){
+  let yr=S.years.find(y=>y.name.toLowerCase()===row.yearName.toLowerCase());if(!yr){yr={id:uid(),name:row.yearName};S.years.push(yr);created.years++}
+  let co=S.courses.find(c=>c.name.toLowerCase()===row.courseName.toLowerCase());if(!co){co={id:uid(),name:row.courseName};S.courses.push(co);created.courses++}
+  let sec=S.sections.find(s=>s.yearId===yr.id&&s.courseId===co.id&&s.name.toLowerCase()===row.sectionName.toLowerCase());
+  if(!sec){sec={id:uid(),name:row.sectionName,yearId:yr.id,courseId:co.id,headId:''};S.sections.push(sec);created.sections++}
+  if(!sec.headId&&row.headUser){const hu=S.users.find(u=>u.role==='head'&&u.active&&u.username.toLowerCase()===row.headUser);if(hu)sec.headId=hu.id}
+  const hasPlan=row.pa!==null&&row.pt!==null,hasActual=row.aa!==null&&row.at!==null;
+  if(hasPlan)S.plans[K(sec.id,row.weekKey)]={a:row.pa,t:row.pt,by:me.id,ts:Date.now(),src:'import'};
+  if(hasActual)S.actuals[K(sec.id,row.weekKey)]={a:row.aa,t:row.at,remark:row.remark,by:me.id,ts:Date.now(),src:'import'};
+  okCount++;results.push({row:row.sheetRow,ok:true,msg:`${secLabel(sec)} — ${fmt(row.weekKey)}`})}
  impResults=results;impSummary={ok:okCount,fail:results.length-okCount,created};
- await save();impFile=null;render()}
-function importV(){
- return`<div class="al g">Load historical weekly Plan/Actual data in bulk from a spreadsheet. Any Year, Course or Section named in the file that doesn't already exist is created automatically.</div>
+ impPreview=null;impFile=null;await save();render()}
+function cancelImportPreview(){impPreview=null;render()}
+function scanBadRecords(){const bad=[];
+ const check=(store,kind)=>Object.keys(store).forEach(k=>{const[sid,w]=k.split('|');
+  const reasons=[];
+  if(!isValidWeekKey(w))reasons.push('malformed week value');
+  if(!S.sections.find(s=>s.id===sid))reasons.push('section no longer exists');
+  if(reasons.length)bad.push({k,kind,sid,w,reasons:reasons.join(', ')})});
+ check(S.plans,'Planned');check(S.actuals,'Actual');
+ return bad}
+function importV(){const bad=scanBadRecords();
+ return`<div class="al g">Load historical weekly Plan/Actual data in bulk from a spreadsheet. After you upload, you'll see a review step listing anything new it would create before anything is saved — so a spelling mismatch can't silently split your data into duplicates.</div>
  <div class="card"><b>1. Get the template</b><p class="mut">Download it, fill in one row per Section per Week, then come back and upload it below.</p><button class="sec" onclick="downloadTemplate()">Download template (.xlsx)</button></div>
- <div class="card"><b>2. Upload your filled-in file</b><div class="row"><input type="file" id="impInput" accept=".xlsx,.xls" onchange="onImpFile(this)"><button onclick="runImport()">Import</button></div>${impName?`<div class="mut">Selected: ${esc(impName)}</div>`:''}</div>
- ${impResults?importResultsV():''}`}
+ <div class="card"><b>2. Upload your filled-in file</b><div class="row"><input type="file" id="impInput" accept=".xlsx,.xls" onchange="onImpFile(this)"><button onclick="parseImportFile()">Review</button></div>${impName?`<div class="mut">Selected: ${esc(impName)}</div>`:''}</div>
+ ${impPreview?importPreviewV():''}
+ ${impResults?importResultsV():''}
+ <div class="card"><b>Data health check</b><p class="mut">Scans for records with a broken week value or pointing at a deleted section — these can happen from an old import or testing data, and can throw off week ordering and totals elsewhere in the app.</p>
+ ${bad.length?`<div class="al b">${bad.length} problem record(s) found.</div><div class="tw"><table><tr><th>Type</th><th>Section ID</th><th>Week value</th><th>Issue</th></tr>${bad.map(b=>`<tr><td>${b.kind}</td><td class="mut">${esc(b.sid)}</td><td class="mut">${esc(String(b.w))}</td><td>${esc(b.reasons)}</td></tr>`).join('')}</table></div><button class="dng" onclick="cleanBadRecords()">Delete all ${bad.length} flagged record(s)</button>`:'<div class="al g">No problem records found.</div>'}</div>`}
+async function cleanBadRecords(){const bad=scanBadRecords();if(!bad.length)return;
+ if(!confirm(`Permanently delete ${bad.length} flagged record(s)? This cannot be undone.`))return;
+ bad.forEach(b=>{if(b.kind==='Planned')delete S.plans[b.k];else delete S.actuals[b.k]});
+ await save();toast('Cleaned up');render()}
+function importPreviewV(){const p=impPreview,hasNew=p.newYearNames.length||p.newCourseNames.length||p.newSectionCombos.length;
+ return`<div class="card"><b>Review before importing</b>
+ <div class="row"><span class="tag ok">${p.validRows.length} row(s) ready to import</span>${p.badRows.length?`<span class="tag b">${p.badRows.length} row(s) will be skipped</span>`:''}</div>
+ ${hasNew?`<div class="al w"><b>This will create new records that don't exist yet — double-check none of these are just a typo or a different spelling of something you already have, or you'll end up with duplicate, split data:</b>
+  ${p.newYearNames.length?`<div style="margin-top:6px">New Year(s): ${p.newYearNames.map(esc).join(', ')}</div>`:''}
+  ${p.newCourseNames.length?`<div>New Course(s): ${p.newCourseNames.map(esc).join(', ')}</div>`:''}
+  ${p.newSectionCombos.length?`<div>New Section(s): ${p.newSectionCombos.map(c=>esc(`${c.year} · ${c.course} · ${c.section}`)).join(', ')}</div>`:''}
+ </div>`:`<div class="al g">Every row matches a Year, Course and Section that already exists — nothing new will be created.</div>`}
+ ${p.badRows.length?`<div class="tw"><table><tr><th>Sheet row</th><th>Reason will be skipped</th></tr>${p.badRows.map(r=>`<tr><td>${r.row}</td><td>${esc(r.msg)}</td></tr>`).join('')}</table></div>`:''}
+ <div class="row">${p.validRows.length?`<button onclick="confirmImport()">Confirm import (${p.validRows.length} row${p.validRows.length===1?'':'s'})</button>`:''} <button class="sec" onclick="cancelImportPreview()">Cancel</button></div></div>`}
 function importResultsV(){const{ok,fail,created}=impSummary,badRows=impResults.filter(r=>!r.ok);
  return`<div class="card"><b>Import results</b>
  <div class="row"><span class="tag ok">${ok} imported</span>${fail?`<span class="tag b">${fail} skipped</span>`:''}${created.years||created.courses||created.sections?`<span class="tag">${created.years} new Year(s), ${created.courses} new Course(s), ${created.sections} new Section(s) created</span>`:''}</div>
@@ -407,24 +462,29 @@ function adminHome(){const weeks=[];for(let w=iso(mon(S.termStart));w<=addW(CUR,
  const rows=list.map(s=>{const st=status(s.id,ow),p=S.plans[K(s.id,ow)]||{},a=S.actuals[K(s.id,ow)]||{},u=unl(s.id,ow),hd=S.users.find(x=>x.id===s.headId),id=s.id;
  if(edRec===id){const v=(x)=>x??'';
   return`<tr><td>${secLabel(s)}</td><td>${hd?esc(hd.name):'<span class="tag b">Unmapped</span>'}</td>
-  <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_pa" value="${v(p.a)}" style="width:56px"> / <input type="number" min="0" max="${MAXH}" step="0.5" id="er_pt" value="${v(p.t)}" style="width:56px"></td>
-  <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_aa" value="${v(a.a)}" style="width:56px"> / <input type="number" min="0" max="${MAXH}" step="0.5" id="er_at" value="${v(a.t)}" style="width:56px"></td>
+  <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_pa" value="${v(p.a)}" style="width:60px"></td>
+  <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_aa" value="${v(a.a)}" style="width:60px"></td>
+  <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_pt" value="${v(p.t)}" style="width:60px"></td>
+  <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_at" value="${v(a.t)}" style="width:60px"></td>
   <td colspan="2"><textarea id="er_rm" placeholder="Remark">${esc(a.remark||'')}</textarea></td>
   <td><button onclick="saveRecord('${id}')">Save</button> <button class="sec" onclick="edRec='';render()">Cancel</button></td></tr>`}
- return`<tr><td>${secLabel(s)}</td><td>${hd?esc(hd.name):'<span class="tag b">Unmapped</span>'}</td><td>${p.a??'—'} / ${p.t??'—'}</td><td>${a.a??'—'} / ${a.t??'—'}</td><td><span class="tag ${st[1]}">${st[0]}</span></td><td class="mut">${esc(a.remark||'')}</td>
+ const pa2=(x,y)=>x==null?'<span class="mut">—</span>':`${x.toFixed(1)}${y!=null&&x<y?' <span style="color:var(--bad)">⚠</span>':''}`;
+ return`<tr><td>${secLabel(s)}</td><td>${hd?esc(hd.name):'<span class="tag b">Unmapped</span>'}</td>
+ <td>${p.a??'<span class="mut">—</span>'}</td><td>${pa2(a.a,p.a)}</td><td>${p.t??'<span class="mut">—</span>'}</td><td>${pa2(a.t,p.t)}</td>
+ <td><span class="tag ${st[1]}">${st[0]}</span></td><td class="mut">${esc(a.remark||'')}</td>
  <td>${ow<CUR&&ow!==LAST||ow===LAST?`<button class="${u?'dng':'sec'}" onclick="toggleUnlock('${s.id}')">${u?'Lock':'Unlock'}</button>`:''} <button class="sec" onclick="edRec='${id}';render()">Edit</button> ${(p.a!=null||a.a!=null)?`<button class="dng" onclick="deleteRecord('${id}')">Delete</button>`:''}</td></tr>`}).join('');
  const late=S.sections.filter(s=>{const x=status(s.id,LAST)[0];return x==='Actual pending'||x==='Not planned'}).length;
  const heads=S.users.filter(u=>u.role==='head'&&u.active);
  const statuses=['Completed','Shortfall','Actual pending','Planned','Not planned'];
  return`${late?`<div class="al b">${late} section(s) have not completed last week's (${fmt(LAST)}) entry.</div>`:'<div class="al g">All sections are up to date for last week.</div>'}
- <div class="card"><div class="row"><b>Week:</b><select onchange="ow=this.value;render()">${weeks.map(w=>`<option value="${w}" ${w===ow?'selected':''}>${fmt(w)}${w===CUR?' (This week)':w===LAST?' (Last week)':''}</option>`).join('')}</select><span class="mut">Unlock lets the head edit plan and actual for that section-week. Lock it again when done. Hours shown as Acad / Training.</span></div>
+ <div class="card"><div class="row"><b>Week:</b><select onchange="ow=this.value;render()">${weeks.map(w=>`<option value="${w}" ${w===ow?'selected':''}>${fmt(w)}${w===CUR?' (This week)':w===LAST?' (Last week)':''}</option>`).join('')}</select><span class="mut">Unlock lets the head edit plan and actual for that section-week. Lock it again when done.</span></div>
  <div class="row"><input id="ovq" placeholder="Search section or head…" value="${esc(ovSearch)}" oninput="ovSearch=this.value;render()" style="min-width:200px">
  <select onchange="ovYear=this.value;render()"><option value="">All years</option>${S.years.map(y=>`<option value="${y.id}" ${y.id===ovYear?'selected':''}>${esc(y.name)}</option>`).join('')}</select>
  <select onchange="ovCourse=this.value;render()"><option value="">All courses</option>${S.courses.map(c=>`<option value="${c.id}" ${c.id===ovCourse?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
  <select onchange="ovHead=this.value;render()"><option value="">All heads</option>${heads.map(u=>`<option value="${u.id}" ${u.id===ovHead?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
  <select onchange="ovStatus=this.value;render()"><option value="">All statuses</option>${statuses.map(x=>`<option value="${x}" ${x===ovStatus?'selected':''}>${x}</option>`).join('')}</select>
  ${(ovYear||ovCourse||ovHead||ovStatus||ovSearch)?`<button class="sec" onclick="ovYear='';ovCourse='';ovHead='';ovStatus='';ovSearch='';render()">Clear filters</button>`:''}</div>
- <div class="tw"><table><tr><th>Section</th><th>Head</th><th>Planned</th><th>Actual</th><th>Status</th><th>Remark</th><th>Access</th></tr>${rows||`<tr><td colspan=7 class="mut">${S.sections.length?'No section matches this filter.':'No sections yet. Add them in Section Mapping.'}</td></tr>`}</table></div></div>`}
+ <div class="tw"><table><tr><th>Section</th><th>Head</th><th>Plan Academic</th><th>Actual Academic</th><th>Plan Training</th><th>Actual Training</th><th>Status</th><th>Remark</th><th>Access</th></tr>${rows||`<tr><td colspan=9 class="mut">${S.sections.length?'No section matches this filter.':'No sections yet. Add them in Section Mapping.'}</td></tr>`}</table></div></div>`}
 async function toggleUnlock(id){const k=K(id,ow);if(S.unlocks[k])delete S.unlocks[k];else S.unlocks[k]=true;await save();render()}
 async function saveRecord(id){const g=x=>{const v=$('#er_'+x).value;return v===''?null:parseFloat(v)};
  const pa=g('pa'),pt=g('pt'),aa=g('aa'),at=g('at'),rm=$('#er_rm').value.trim();
@@ -519,7 +579,7 @@ function mapV(){const heads=S.users.filter(u=>u.role==='head'&&u.active);
 async function assignS(id,on){S.sections.find(s=>s.id===id).headId=on?mh:'';await save();toast(on?'Section assigned':'Section unassigned');render()}
 async function assignYear(y){S.sections.filter(s=>s.yearId===y).forEach(s=>s.headId=mh);await save();toast('Year assigned');render()}
 /* ---------- LEADERBOARD ---------- */
-function lbV(){const ok=w=>w<CUR&&(lbp==='all'||(lbp==='last'?w===LAST:w>=addW(CUR,-4))),sc={};
+function lbV(){const ok=w=>isValidWeekKey(w)&&w<CUR&&(lbp==='all'||(lbp==='last'?w===LAST:w>=addW(CUR,-4))),sc={};
  Object.keys(S.plans).forEach(k=>{const[sid,w]=k.split('|');if(!ok(w))return;const p=S.plans[k],a=S.actuals[k],o=sc[sid]=sc[sid]||{p:0,c:0,n:0,s:0};o.p+=p.a+p.t;o.n++;if(a){o.s++;o.c+=Math.min(a.a+a.t,p.a+p.t)}});
  const fin=(name,o,mine)=>({name,mine,p:o.p,c:o.c,n:o.n,s:o.s,pct:o.p?o.c/o.p*100:0,sub:o.n?o.s/o.n*100:0});
  const heads=S.users.filter(u=>u.role==='head'&&u.active).map(u=>{const t={p:0,c:0,n:0,s:0};S.sections.filter(s=>s.headId===u.id).forEach(s=>{const o=sc[s.id];if(o){t.p+=o.p;t.c+=o.c;t.n+=o.n;t.s+=o.s}});return fin(u.name,t,u.id===me.id)});
