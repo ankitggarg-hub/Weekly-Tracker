@@ -70,7 +70,7 @@ const addW=(k,n)=>{const x=new Date(k+'T12:00:00');x.setDate(x.getDate()+7*n);re
 const CUR=iso(mon(new Date())),LAST=addW(CUR,-1);
 const fmt=k=>{const a=new Date(k+'T12:00:00'),b=new Date(k+'T12:00:00');b.setDate(b.getDate()+5);const o={day:'numeric',month:'short'};return a.toLocaleDateString('en-GB',o)+' – '+b.toLocaleDateString('en-GB',o)};
 const MAXH=80;
-let mh='',lbp='last',rsec='',rhd='',rFrom='',rTo='',calMonth=CUR.slice(0,8)+'01',impFile=null,impName='',impResults=null,impSummary=null,impPreview=null,ovYear='',ovCourse='',ovHead='',ovStatus='',ovSearch='',secSearch='',usrSearch='',hSec='',edRec='',S=null,me=null,tab='home',wk=LAST,ow=LAST,dbDoc=null,mode='local';
+let mh='',lbp='last',rsec='',rhd='',rFrom='',rTo='',calMonth=CUR.slice(0,8)+'01',impFile=null,impName='',impResults=null,impSummary=null,impPreview=null,ovYear='',ovCourse='',ovHead='',ovStatus='',ovSearch='',secSearch='',usrSearch='',hSec='',edRec='',edHol='',S=null,me=null,tab='home',wk=LAST,ow=LAST,dbDoc=null,mode='local';
 const seed=()=>({users:[{id:'u0',name:'Administrator',username:'admin',password:'admin123',role:'admin',active:true}],years:[{id:'y1',name:'Year 1'},{id:'y2',name:'Year 2'}],courses:[],sections:[],plans:{},actuals:{},unlocks:{},holidays:[],weeklyOff:0,termStart:'2026-07-01'});
 window.addEventListener('unhandledrejection',e=>toast('Error: '+((e.reason&&e.reason.message)||e.reason),1));window.addEventListener('error',e=>toast('Error: '+e.message,1));
 const norm=()=>{['users','years','courses','sections','holidays'].forEach(k=>{if(!Array.isArray(S[k]))S[k]=[]});['plans','actuals','unlocks'].forEach(k=>{if(!S[k]||typeof S[k]!=='object'||Array.isArray(S[k]))S[k]={}});if(S.weeklyOff==null||isNaN(S.weeklyOff))S.weeklyOff=0;if(!S.termStart)S.termStart='2026-07-01'};
@@ -171,19 +171,23 @@ async function deleteMyRecord(id){const s=S.sections.find(x=>x.id===id);if(!s||s
  await save();toast('Deleted');render()}
 /* ---------- PROGRESS REPORT (compensation-aware, cumulative) ---------- */
 const isValidWeekKey=w=>/^\d{4}-\d{2}-\d{2}$/.test(w)&&!isNaN(new Date(w+'T12:00:00'));
+function commonYear(){const counts={};[...Object.keys(S.plans),...Object.keys(S.actuals)].forEach(k=>{const w=k.split('|')[1];if(isValidWeekKey(w)){const y=w.slice(0,4);counts[y]=(counts[y]||0)+1}});
+ let best=null,bestN=0;for(const y in counts)if(counts[y]>bestN){best=y;bestN=counts[y]}
+ return best?parseInt(best,10):new Date(S.termStart+'T12:00:00').getFullYear()}
+const isReasonableWeekKey=w=>isValidWeekKey(w)&&Math.abs(parseInt(w.slice(0,4),10)-commonYear())<=1;
 function progressCalc(sectionIds){
  const weeks=[...new Set(Object.keys(S.plans).filter(k=>sectionIds.includes(k.split('|')[0])).map(k=>k.split('|')[1]))]
-  .filter(isValidWeekKey).sort((a,b)=>new Date(a+'T12:00:00')-new Date(b+'T12:00:00'));
- let cp=0,ca=0;
+  .filter(isReasonableWeekKey).sort((a,b)=>new Date(a+'T12:00:00')-new Date(b+'T12:00:00'));
+ let cp=0,ca=0,cpA=0,caA=0,cpT=0,caT=0;
  const rows=weeks.map(w=>{
   let pa=0,pt=0,aa=0,at=0,hasA=false;
   sectionIds.forEach(sid=>{const p=S.plans[K(sid,w)],a=S.actuals[K(sid,w)];if(p){pa+=p.a;pt+=p.t}if(a){hasA=true;aa+=a.a;at+=a.t}});
   const ptot=pa+pt,atot=aa+at,due=w<=LAST;
   let color='mut',label='Upcoming';
-  if(due){cp+=ptot;if(hasA){ca+=atot;label=atot>=ptot?'Met / Exceeded':'Shortfall';color=atot>=ptot?'ok':'b'}else{label='Not submitted';color='b'}}
-  return{w,pa,pt,aa,at,ptot,atot,due,hasA,label,color,cumP:due?cp:null,cumA:due?ca:null};
+  if(due){cp+=ptot;cpA+=pa;cpT+=pt;if(hasA){ca+=atot;caA+=aa;caT+=at;label=atot>=ptot?'Met / Exceeded':'Shortfall';color=atot>=ptot?'ok':'b'}else{label='Not submitted';color='b'}}
+  return{w,pa,pt,aa,at,ptot,atot,due,hasA,label,color,cumP:due?cp:null,cumA:due?ca:null,cumPA:due?cpA:null,cumAA:due?caA:null,cumPT:due?cpT:null,cumAT:due?caT:null};
  });
- return{rows,totals:{planned:cp,actual:ca,balance:ca-cp}};
+ return{rows,totals:{planned:cp,actual:ca,balance:ca-cp,balanceA:caA-cpA,balanceT:caT-cpT}};
 }
 function recordEditable(sid,w){if(me.role==='admin')return{pe:true,ae:true};const pe=planEd(sid,w),ae=actEd(sid,w)&&!!S.plans[K(sid,w)];return{pe,ae}}
 function progressTable(sectionIds,label,fromWk,toWk){
@@ -195,6 +199,7 @@ function progressTable(sectionIds,label,fromWk,toWk){
  if(!rows.length)return`<div class="al w">No weeks match this filter for ${esc(label)}.</div>`;
  const editSid=sectionIds.length===1?sectionIds[0]:null;
  const cell=(actual,planned,due,has)=>{if(!due)return'<td class="mut">—</td>';if(!has)return'<td class="mut">—</td>';const ok=actual>=planned;return`<td style="color:${ok?'var(--ok)':'var(--bad)'};font-weight:600">${actual.toFixed(1)} h</td>`};
+ const bal=v=>v==null?'<td class="mut">—</td>':`<td><b style="color:${v>=0?'var(--ok)':'var(--bad)'}">${(v>=0?'+':'')+v.toFixed(1)} h</b></td>`;
  const trs=rows.map(r=>{
   if(editSid&&edRec===K(editSid,r.w)){const v=(x)=>x??'';
    return`<tr><td>${fmt(r.w)}</td>
@@ -202,7 +207,7 @@ function progressTable(sectionIds,label,fromWk,toWk){
    <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_aa" value="${v(r.hasA?r.aa:'')}" style="width:56px"></td>
    <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_pt" value="${v(r.pt)}" style="width:56px"></td>
    <td><input type="number" min="0" max="${MAXH}" step="0.5" id="er_at" value="${v(r.hasA?r.at:'')}" style="width:56px"></td>
-   <td colspan="2"><textarea id="er_rm" placeholder="Remark">${esc((S.actuals[K(editSid,r.w)]||{}).remark||'')}</textarea></td>
+   <td colspan="3"><textarea id="er_rm" placeholder="Remark">${esc((S.actuals[K(editSid,r.w)]||{}).remark||'')}</textarea></td>
    <td><button onclick="saveRecordAt('${editSid}','${r.w}')">Save</button> <button class="sec" onclick="edRec='';render()">Cancel</button></td></tr>`}
   const canEdit=editSid&&(me.role==='admin'||recordEditable(editSid,r.w).pe||recordEditable(editSid,r.w).ae);
   return`<tr><td>${fmt(r.w)}${r.w===CUR?' <span class="mut">(current)</span>':r.w===LAST?' <span class="mut">(last)</span>':''}</td>
@@ -211,14 +216,16 @@ function progressTable(sectionIds,label,fromWk,toWk){
   <td>${r.pt.toFixed(1)} h</td>
   ${cell(r.at,r.pt,r.due,r.hasA)}
   <td><span class="tag ${r.color}">${r.label}</span></td>
-  <td>${r.due?`<b style="color:${r.cumA>=r.cumP?'var(--ok)':'var(--bad)'}">${(r.cumA-r.cumP>=0?'+':'')+(r.cumA-r.cumP).toFixed(1)} h</b>`:'—'}${canEdit?` <button class="sec" onclick="edRec='${K(editSid,r.w)}';render()">Edit</button> <button class="dng" onclick="deleteRecordAt('${editSid}','${r.w}')">Delete</button>`:''}</td></tr>`}).join('');
- const totA=rows.reduce((s,r)=>s+r.pa,0),totAA=rows.reduce((s,r)=>s+(r.due&&r.hasA?r.aa:0),0),totT=rows.reduce((s,r)=>s+r.pt,0),totAT=rows.reduce((s,r)=>s+(r.due&&r.hasA?r.at:0),0),totBal=totAA+totAT-(totA+totT);
- return`<div class="tw"><table><tr><th>Week</th><th>Plan Academic</th><th>Actual Academic</th><th>Plan Training</th><th>Actual Training</th><th>Status</th><th>Running balance${editSid?' / Actions':''}</th></tr>${trs}
+  <td>${bal(r.due?r.cumAA-r.cumPA:null)}</td>
+  <td>${bal(r.due?r.cumAT-r.cumPT:null)}</td>
+  <td>${bal(r.due?r.cumA-r.cumP:null)}${canEdit?` <button class="sec" onclick="edRec='${K(editSid,r.w)}';render()">Edit</button> <button class="dng" onclick="deleteRecordAt('${editSid}','${r.w}')">Delete</button>`:''}</td></tr>`}).join('');
+ const totA=rows.reduce((s,r)=>s+r.pa,0),totAA=rows.reduce((s,r)=>s+(r.due&&r.hasA?r.aa:0),0),totT=rows.reduce((s,r)=>s+r.pt,0),totAT=rows.reduce((s,r)=>s+(r.due&&r.hasA?r.at:0),0),totBalA=totAA-totA,totBalT=totAT-totT,totBal=totBalA+totBalT;
+ return`<div class="tw"><table><tr><th>Week</th><th>Plan Academic</th><th>Actual Academic</th><th>Plan Training</th><th>Actual Training</th><th>Status</th><th>Balance (Academic)</th><th>Balance (Training)</th><th>Balance (Total)${editSid?' / Actions':''}</th></tr>${trs}
  <tr style="font-weight:600;background:var(--bg)"><td>Total (${filtered?'shown weeks':'all weeks'})</td><td>${totA.toFixed(1)} h</td>
  <td style="color:${totAA>=totA?'var(--ok)':'var(--bad)'}">${totAA.toFixed(1)} h</td><td>${totT.toFixed(1)} h</td>
  <td style="color:${totAT>=totT?'var(--ok)':'var(--bad)'}">${totAT.toFixed(1)} h</td>
  <td><span class="tag ${totBal>=0?'ok':'b'}">${totBal>=0?'On track':'Behind'}</span></td>
- <td><b style="color:${totBal>=0?'var(--ok)':'var(--bad)'}">${(totBal>=0?'+':'')+totBal.toFixed(1)} h</b></td></tr></table></div>
+ <td>${bal(totBalA)}</td><td>${bal(totBalT)}</td><td>${bal(totBal)}</td></tr></table></div>
  ${editSid?'<p class="mut">Edit or delete a specific week\'s record directly above — useful for correcting bad backlog imports. Heads can only touch weeks they would normally be allowed to edit; admins can edit or delete any week.</p>':''}`}
 async function saveRecordAt(sid,w){const g=x=>{const v=$('#er_'+x).value;return v===''?null:parseFloat(v)};
  const pa=g('pa'),pt=g('pt'),aa=g('aa'),at=g('at'),rm=$('#er_rm').value.trim();
@@ -367,10 +374,11 @@ async function confirmImport(){if(!impPreview)return;const{validRows,badRows}=im
  impResults=results;impSummary={ok:okCount,fail:results.length-okCount,created};
  impPreview=null;impFile=null;await save();render()}
 function cancelImportPreview(){impPreview=null;render()}
-function scanBadRecords(){const bad=[];
+function scanBadRecords(){const bad=[],cy=commonYear();
  const check=(store,kind)=>Object.keys(store).forEach(k=>{const[sid,w]=k.split('|');
   const reasons=[];
   if(!isValidWeekKey(w))reasons.push('malformed week value');
+  else if(Math.abs(parseInt(w.slice(0,4),10)-cy)>1)reasons.push(`unusual year — most of your data is ${cy}, this record is dated ${w.slice(0,4)}`);
   if(!S.sections.find(s=>s.id===sid))reasons.push('section no longer exists');
   if(reasons.length)bad.push({k,kind,sid,w,reasons:reasons.join(', ')})});
  check(S.plans,'Planned');check(S.actuals,'Actual');
@@ -428,6 +436,12 @@ async function addSectionHoliday(){const mine=S.sections.filter(s=>s.headId===me
 async function delHoliday(id){const h=S.holidays.find(x=>x.id===id);if(!h)return;
  if(me.role!=='admin'){if(h.sectionId==null)return toast('Only admin can remove an all-department off day',1);const s=S.sections.find(x=>x.id===h.sectionId);if(!s||s.headId!==me.id)return toast('You can only remove off days for your own sections',1)}
  S.holidays=S.holidays.filter(x=>x.id!==id);await save();toast('Off day removed');render()}
+async function saveEditHoliday(id){const h=S.holidays.find(x=>x.id===id);if(!h)return;
+ if(me.role!=='admin'){if(h.sectionId==null)return toast('Only admin can edit an all-department off day',1);const s=S.sections.find(x=>x.id===h.sectionId);if(!s||s.headId!==me.id)return toast('You can only edit off days for your own sections',1)}
+ const d=$('#eh_date').value,l=$('#eh_label').value.trim();
+ if(!d||!l)return toast('Select a date and enter a reason',1);
+ if(S.holidays.some(x=>x.id!==id&&x.date===d&&x.sectionId===h.sectionId))return toast('This date is already marked off',1);
+ h.date=d;h.label=l;edHol='';await save();toast('Off day updated');render()}
 function calendarV(){const adm=me.role==='admin';
  const nav=`<div class="row"><button class="sec" onclick="calMonth=shiftMonth(calMonth,-1);render()">‹ Prev</button><b>${monthLabel(calMonth)}</b><button class="sec" onclick="calMonth=shiftMonth(calMonth,1);render()">Next ›</button></div>`;
  if(adm){
@@ -437,7 +451,10 @@ function calendarV(){const adm=me.role==='admin';
   <div class="row"><b>Term start (earliest week in dropdowns):</b><input type="date" id="ts_date" value="${S.termStart}"><button class="sec" onclick="setTermStart()">Save</button></div></div>
   <div class="card">${nav}${monthGrid(calMonth,()=>true,'admin')}</div>
   <div class="card"><b>Mark an off day for all departments</b><div class="row"><input type="date" id="h_date"><input id="h_label" placeholder="Reason (e.g. Diwali, College Foundation Day)"><button onclick="addGlobalHoliday()">Mark off for all departments</button></div></div>
-  <div class="card"><b>All off days</b><div class="tw"><table><tr><th>Date</th><th>Reason</th><th>Scope</th><th></th></tr>${list.map(h=>`<tr><td>${fmt2(h.date)}</td><td>${esc(h.label)}</td><td>${h.sectionId?nm2('sections',h.sectionId):'<span class="tag ok">All departments</span>'}</td><td><button class="dng" onclick="delHoliday('${h.id}')">Delete</button></td></tr>`).join('')||'<tr><td colspan=4 class="mut">None marked yet</td></tr>'}</table></div></div>`}
+  <div class="card"><b>All off days</b><div class="tw"><table><tr><th>Date</th><th>Reason</th><th>Scope</th><th></th></tr>${list.map(h=>edHol===h.id?
+   `<tr><td><input type="date" id="eh_date" value="${h.date}"></td><td><input id="eh_label" value="${esc(h.label)}"></td><td>${h.sectionId?nm2('sections',h.sectionId):'<span class="tag ok">All departments</span>'}</td>
+    <td><button onclick="saveEditHoliday('${h.id}')">Save</button> <button class="sec" onclick="edHol='';render()">Cancel</button></td></tr>`
+   :`<tr><td>${fmt2(h.date)}</td><td>${esc(h.label)}</td><td>${h.sectionId?nm2('sections',h.sectionId):'<span class="tag ok">All departments</span>'}</td><td><button class="sec" onclick="edHol='${h.id}';render()">Edit</button> <button class="dng" onclick="delHoliday('${h.id}')">Delete</button></td></tr>`).join('')||'<tr><td colspan=4 class="mut">None marked yet</td></tr>'}</table></div></div>`}
  const mine=S.sections.filter(s=>s.headId===me.id);
  if(!mine.length)return`<div class="al w">No sections are mapped to you yet. Please contact the admin.</div>`;
  const own=S.holidays.filter(h=>h.sectionId&&mine.some(s=>s.id===h.sectionId)).sort((a,b)=>a.date<b.date?-1:1);
@@ -446,7 +463,10 @@ function calendarV(){const adm=me.role==='admin';
  return`<div class="al g">Every ${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][S.weeklyOff]} is off for all departments (set by admin). Mark event days or extra holidays for your section(s) below.</div>
  <div class="card">${nav}${monthGrid(calMonth,vis,'head')}</div>
  <div class="card"><b>Mark an off day for your section</b><div class="row">${mine.length>1?`<select id="h_sec">${mine.map(s=>`<option value="${s.id}">${secLabel(s)}</option>`).join('')}</select>`:''}<input type="date" id="h_date"><input id="h_label" placeholder="Reason (e.g. Sports Day, Seminar)"><button onclick="addSectionHoliday()">Mark off day</button></div></div>
- <div class="card"><b>Your section off days</b><div class="tw"><table><tr><th>Date</th><th>Section</th><th>Reason</th><th></th></tr>${own.map(h=>`<tr><td>${fmt2(h.date)}</td><td>${nm2('sections',h.sectionId)}</td><td>${esc(h.label)}</td><td><button class="dng" onclick="delHoliday('${h.id}')">Delete</button></td></tr>`).join('')||'<tr><td colspan=4 class="mut">None marked yet</td></tr>'}</table></div></div>
+ <div class="card"><b>Your section off days</b><div class="tw"><table><tr><th>Date</th><th>Section</th><th>Reason</th><th></th></tr>${own.map(h=>edHol===h.id?
+  `<tr><td><input type="date" id="eh_date" value="${h.date}"></td><td>${nm2('sections',h.sectionId)}</td><td><input id="eh_label" value="${esc(h.label)}"></td>
+   <td><button onclick="saveEditHoliday('${h.id}')">Save</button> <button class="sec" onclick="edHol='';render()">Cancel</button></td></tr>`
+  :`<tr><td>${fmt2(h.date)}</td><td>${nm2('sections',h.sectionId)}</td><td>${esc(h.label)}</td><td><button class="sec" onclick="edHol='${h.id}';render()">Edit</button> <button class="dng" onclick="delHoliday('${h.id}')">Delete</button></td></tr>`).join('')||'<tr><td colspan=4 class="mut">None marked yet</td></tr>'}</table></div></div>
  <div class="card"><b>All-department off days (set by admin)</b><div class="tw"><table><tr><th>Date</th><th>Reason</th></tr>${glob.map(h=>`<tr><td>${fmt2(h.date)}</td><td>${esc(h.label)}</td></tr>`).join('')||'<tr><td colspan=2 class="mut">None</td></tr>'}</table></div></div>`}
 async function setWeeklyOff(v){S.weeklyOff=parseInt(v,10);await save();toast('Weekly off day updated for all departments');render()}
 async function setTermStart(){const v=$('#ts_date').value;if(!v)return toast('Pick a date',1);S.termStart=v;await save();toast('Term start updated');render()}
@@ -579,7 +599,7 @@ function mapV(){const heads=S.users.filter(u=>u.role==='head'&&u.active);
 async function assignS(id,on){S.sections.find(s=>s.id===id).headId=on?mh:'';await save();toast(on?'Section assigned':'Section unassigned');render()}
 async function assignYear(y){S.sections.filter(s=>s.yearId===y).forEach(s=>s.headId=mh);await save();toast('Year assigned');render()}
 /* ---------- LEADERBOARD ---------- */
-function lbV(){const ok=w=>isValidWeekKey(w)&&w<CUR&&(lbp==='all'||(lbp==='last'?w===LAST:w>=addW(CUR,-4))),sc={};
+function lbV(){const ok=w=>isReasonableWeekKey(w)&&w<CUR&&(lbp==='all'||(lbp==='last'?w===LAST:w>=addW(CUR,-4))),sc={};
  Object.keys(S.plans).forEach(k=>{const[sid,w]=k.split('|');if(!ok(w))return;const p=S.plans[k],a=S.actuals[k],o=sc[sid]=sc[sid]||{p:0,c:0,n:0,s:0};o.p+=p.a+p.t;o.n++;if(a){o.s++;o.c+=Math.min(a.a+a.t,p.a+p.t)}});
  const fin=(name,o,mine)=>({name,mine,p:o.p,c:o.c,n:o.n,s:o.s,pct:o.p?o.c/o.p*100:0,sub:o.n?o.s/o.n*100:0});
  const heads=S.users.filter(u=>u.role==='head'&&u.active).map(u=>{const t={p:0,c:0,n:0,s:0};S.sections.filter(s=>s.headId===u.id).forEach(s=>{const o=sc[s.id];if(o){t.p+=o.p;t.c+=o.c;t.n+=o.n;t.s+=o.s}});return fin(u.name,t,u.id===me.id)});
