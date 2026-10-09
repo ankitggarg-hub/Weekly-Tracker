@@ -34,7 +34,7 @@ main{max-width:1120px;margin:0 auto;padding:20px}
 .fl input{display:block;width:100%;margin-top:5px}
 .hint{margin-top:14px !important;font-size:12px}.hint code{background:var(--pri-tint);color:var(--pri);padding:1px 5px;border-radius:4px;font-size:11px}
 input,select,textarea,button{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:7px 10px;transition:border-color .12s,background .12s}
-input[type=number]{width:76px}textarea{width:100%;min-width:170px;height:46px;resize:vertical}
+input[type=number]{width:52px;padding:7px 4px}textarea{width:100%;min-width:170px;height:46px;resize:vertical}
 input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid var(--pri);outline-offset:1px;border-color:var(--pri)}
 button{cursor:pointer;background:var(--pri);color:#fff;border-color:var(--pri);padding:7px 14px;font-weight:500}
 button:hover{background:var(--pri-ink);border-color:var(--pri-ink)}
@@ -50,13 +50,19 @@ th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;verti
 th{font-size:11.5px;color:var(--mut);font-weight:500;border-bottom:1.5px solid var(--ink)}
 .tw tbody tr:hover td{background:var(--pri-tint)}
 .al{padding:10px 14px;border-radius:6px;margin-bottom:10px;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line);color:var(--ink)}
-.al.w{border-left-color:var(--warn)}.al.b{border-left-color:var(--bad)}.al.g{border-left-color:var(--ok)}
+.al.w{border-left-color:var(--warn)}.al.g{border-left-color:var(--ok)}
+.al.b{border-left-color:var(--bad);background:var(--bbg);color:var(--bad);font-weight:500}
 .tag{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11.5px;font-weight:500;background:var(--bg);border:1px solid var(--line)}
 .tag.ok{background:var(--gbg);color:var(--ok);border-color:transparent}.tag.w{background:var(--wbg);color:var(--warn);border-color:transparent}.tag.b{background:var(--bbg);color:var(--bad);border-color:transparent}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}.mut{color:var(--mut);font-size:12px}
 .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:8px}.calhd{font-size:11px;color:var(--mut);text-align:center;padding:2px}
 .calday{min-height:56px;border:1px solid var(--line);border-radius:8px;padding:4px;cursor:pointer;font-size:12px;position:relative}.calday:hover{border-color:var(--pri);background:var(--pri-tint)}.calday.blank{border-color:transparent;cursor:default}.calday.blank:hover{background:none}
-.calday .dn{font-weight:600}.calday .dots{position:absolute;bottom:4px;left:4px;right:4px;display:flex;gap:3px;flex-wrap:wrap}.dot{width:7px;height:7px;border-radius:50%}.dot.g{background:var(--bad)}.dot.s{background:var(--pri)}.calday.wo{background:var(--bg);border-style:dashed}.calday .wolbl{position:absolute;top:4px;right:5px;font-size:9px;color:var(--mut)}
+.calday .dn{font-weight:600}
+.calday.wo{background:var(--bg);border-style:dashed}.calday .wolbl{position:absolute;top:4px;right:5px;font-size:9px;color:var(--mut)}
+.calday.off-g{background:var(--bbg);border-color:transparent}.calday.off-g:hover{background:var(--bbg)}
+.calday.off-s{background:var(--pri-tint);border-color:transparent}.calday.off-s:hover{background:var(--pri-tint)}
+.calday .reason{margin-top:3px;font-size:9.5px;line-height:1.2;color:var(--ink);opacity:.85;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.swatch{width:11px;height:11px;border-radius:3px;display:inline-block}.swatch.g{background:var(--bbg);border:1px solid var(--bad)}.swatch.s{background:var(--pri-tint);border:1px solid var(--pri)}
 .legend{display:flex;gap:16px;align-items:center;font-size:12px;color:var(--mut);margin-top:8px;flex-wrap:wrap}.legend span{display:inline-flex;align-items:center;gap:5px}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;display:none;z-index:9;font-size:13px}
 </style></head><body>
@@ -157,27 +163,36 @@ function headV(){const mine=S.sections.filter(s=>s.headId===me.id);
   ${cells}
   <td><textarea id="rm_${id}" placeholder="Reason if load not covered…" ${ae?'':'disabled'}>${esc(a.remark||'')}</textarea><div class="mut" id="vr_${id}">${short?'Shortfall (compensation allowed across categories): '+(catSum(ah)-catSum(ph)).toFixed(1)+' h':''}</div></td>
   <td>${pe||ae?`<button onclick="saveRow('${id}')">Save</button>`:''} ${(pe&&hasAny(ph))||(ae&&hasAny(ah))?`<button class="dng" onclick="deleteMyRecord('${id}')">Delete</button>`:''} ${!pe&&!ae?'<span class="mut">🔒 Locked</span>':''}</td></tr>`}).join('');
- const headCells=cats.map(c=>`<th>Plan ${esc(c.name)}</th><th>Actual ${esc(c.name)}</th>`).join('');
+ const headCells=cats.map(c=>`<th>Plan ${esc(c.name)} (h)</th><th>Actual ${esc(c.name)} (h)</th>`).join('');
  return`${pend.length?`<div class="al b">⚠ Actual load for last week (${fmt(LAST)}) is pending for ${pend.length} section(s): ${pend.map(s=>esc(s.name)).join(', ')}. Submit before it locks after this week.</div>`:''}
  ${noPlan.length?`<div class="al w">Planned load for the current week (${fmt(CUR)}) is not defined for ${noPlan.length} section(s).</div>`:''}
- <div class="card"><b>Bulk-plan upcoming weeks</b><p class="mut">Set the same planned load across several upcoming weeks in one go — you can still edit or delete any individual week afterward.</p>
- <div class="row">${mine.length>1?`<select id="bp_sec"><option value="">Section…</option>${mine.map(s=>`<option value="${s.id}">${secLabel(s)}</option>`).join('')}</select>`:`<input type="hidden" id="bp_sec" value="${mine[0].id}">`}
- ${cats.map(c=>`<label class="mut" style="display:flex;flex-direction:column;gap:3px">${esc(c.name)}<input type="number" min="0" max="${MAXH}" step="0.5" id="bp_${c.id}" style="width:80px"></label>`).join('')}
- <label class="mut" style="display:flex;flex-direction:column;gap:3px">Weeks<input type="number" min="1" max="52" value="4" id="bp_weeks" style="width:70px"></label>
+ <div class="card"><b>Bulk-plan upcoming weeks</b><p class="mut">Set the same planned load across several upcoming weeks in one go, for one section or a whole year at once — you can still edit or delete any individual week afterward.</p>
+ <div class="row">${(()=>{const yrIds=[...new Set(mine.map(s=>s.yearId))],opts=[];
+  yrIds.forEach(yid=>{const n=mine.filter(s=>s.yearId===yid).length;if(n>1)opts.push(`<option value="year:${yid}">All my sections in ${esc(nm('years',yid))} (${n} sections)</option>`)});
+  mine.forEach(s=>opts.push(`<option value="sec:${s.id}">${secLabel(s)}</option>`));
+  return`<select id="bp_sec"><option value="">Apply to…</option>${opts.join('')}</select>`})()}
+ ${cats.map(c=>`<label class="mut" style="display:flex;flex-direction:column;gap:3px">${esc(c.name)}<input type="number" min="0" max="${MAXH}" step="0.5" id="bp_${c.id}" style="width:70px"></label>`).join('')}
+ <label class="mut" style="display:flex;flex-direction:column;gap:3px">Weeks<input type="number" min="1" max="52" value="4" id="bp_weeks" style="width:60px"></label>
  <button onclick="bulkPlan()" style="align-self:flex-end">Apply</button></div></div>
  <div class="card"><div class="row"><b>Week:</b><select onchange="wk=this.value;render()">${weeks.map(w=>`<option value="${w}" ${w===wk?'selected':''}>${fmt(w)}${w===CUR?' (This week)':w===LAST?' (Last week)':w>CUR?' (Upcoming)':''}</option>`).join('')}</select>
  ${mine.length>1?`<b>Section:</b><select onchange="hSec=this.value;render()"><option value="">All my sections</option>${mine.map(s=>`<option value="${s.id}" ${s.id===hSec?'selected':''}>${secLabel(s)}</option>`).join('')}</select>`:''}
  <span class="mut">Hours per week, by category. Plan: this & upcoming weeks. Actual: last week only; older weeks are locked until admin unlocks.</span></div>
  <div class="tw"><table><tr><th>Section</th>${headCells}<th>Remark</th><th></th></tr>${rows||`<tr><td colspan=${2+cats.length*2} class="mut">No section matches this filter.</td></tr>`}</table></div></div>`}
-async function bulkPlan(){const sid=$('#bp_sec').value;if(!sid)return toast('Select a section',1);
+async function bulkPlan(){const sel=$('#bp_sec').value;if(!sel)return toast('Choose a section or a year to apply to',1);
+ const mine=S.sections.filter(s=>s.headId===me.id);
+ let targetIds;
+ if(sel.startsWith('year:')){const yid=sel.slice(5);targetIds=mine.filter(s=>s.yearId===yid).map(s=>s.id)}
+ else{targetIds=[sel.slice(4)]}
+ if(!targetIds.length)return toast('No matching sections found',1);
  const n=parseInt($('#bp_weeks').value,10);if(!n||n<1||n>52)return toast('Enter a number of weeks between 1 and 52',1);
  const ph={};let has=false,bad=false;
  S.categories.forEach(c=>{const el=$('#bp_'+c.id);if(el&&el.value!==''){const v=parseFloat(el.value);if(isNaN(v)||v<0||v>MAXH)bad=true;else{ph[c.id]=v;has=true}}});
  if(bad)return toast(`Hours must be between 0 and ${MAXH}`,1);
  if(!has)return toast('Enter at least one category\'s hours',1);
- if(!confirm(`This will set the planned load for the next ${n} week(s), starting this week, overwriting any existing plan for those weeks. Continue?`))return;
- let w=CUR;for(let i=0;i<n;i++){S.plans[K(sid,w)]={hours:{...ph},by:me.id,ts:Date.now()};w=addW(w,1)}
- await save();toast(`Planned load set for ${n} week(s)`);render()}
+ const scopeMsg=targetIds.length>1?`${targetIds.length} sections`:'this section';
+ if(!confirm(`This will set the planned load for the next ${n} week(s) for ${scopeMsg}, starting this week, overwriting any existing plan for those weeks. Continue?`))return;
+ targetIds.forEach(sid=>{let w=CUR;for(let i=0;i<n;i++){S.plans[K(sid,w)]={hours:{...ph},by:me.id,ts:Date.now()};w=addW(w,1)}});
+ await save();toast(`Planned load set for ${n} week(s) across ${scopeMsg}`);render()}
 function chk(id){const p=S.plans[K(id,wk)];if(!p)return;
  const ah={};S.categories.forEach(c=>{const el=$('#a_'+id+'_'+c.id);if(el){const v=parseFloat(el.value);if(!isNaN(v))ah[c.id]=v}});
  $('#vr_'+id).textContent=(catSum(ah)<catSum(p.hours))?'⚠ Combined total below planned load — remark required (categories can offset each other)':''}
@@ -248,8 +263,8 @@ function progressTable(sectionIds,label,fromWk,toWk){
  const rows=allRows.filter(r=>(!fromWk||r.w>=fromWk)&&(!toWk||r.w<=toWk));
  if(!rows.length)return`<div class="al w">No weeks match this filter for ${esc(label)}.</div>`;
  const editSid=sectionIds.length===1?sectionIds[0]:null,cats=S.categories;
- const cell=(actual,planned,due,has)=>{if(!due||!has)return'<td class="mut">—</td>';const ok=actual>=planned;return`<td style="color:${ok?'var(--ok)':'var(--bad)'};font-weight:600">${actual.toFixed(1)} h</td>`};
- const bal=v=>v==null?'<td class="mut">—</td>':`<td><b style="color:${v>=0?'var(--ok)':'var(--bad)'}">${(v>=0?'+':'')+v.toFixed(1)} h</b></td>`;
+ const cell=(actual,planned,due,has)=>{if(!due||!has)return'<td class="mut">—</td>';const ok=actual>=planned;return`<td style="color:${ok?'var(--ok)':'var(--bad)'};font-weight:600">${actual.toFixed(1)}</td>`};
+ const bal=v=>v==null?'<td class="mut">—</td>':`<td><b style="color:${v>=0?'var(--ok)':'var(--bad)'}">${(v>=0?'+':'')+v.toFixed(1)}</b></td>`;
  const trs=rows.map(r=>{
   if(editSid&&edRec===K(editSid,r.w)){
    const curP=(S.plans[K(editSid,r.w)]||{}).hours||{},curA=(S.actuals[K(editSid,r.w)]||{}).hours||{};
@@ -258,7 +273,7 @@ function progressTable(sectionIds,label,fromWk,toWk){
    <td colspan="${1+cats.length}"><textarea id="er_rm" placeholder="Remark">${esc((S.actuals[K(editSid,r.w)]||{}).remark||'')}</textarea></td>
    <td><button onclick="saveRecordAt('${editSid}','${r.w}')">Save</button> <button class="sec" onclick="edRec='';render()">Cancel</button></td></tr>`}
   const canEdit=editSid&&(me.role==='admin'||recordEditable(editSid,r.w).pe||recordEditable(editSid,r.w).ae);
-  const planActCells=cats.map(c=>`<td>${r.ph[c.id].toFixed(1)} h</td>${cell(r.ah[c.id],r.ph[c.id],r.due,r.hasA)}`).join('');
+  const planActCells=cats.map(c=>`<td>${r.ph[c.id].toFixed(1)}</td>${cell(r.ah[c.id],r.ph[c.id],r.due,r.hasA)}`).join('');
   const balCells=cats.map(c=>bal(r.due&&r.cumA?r.cumA[c.id]-r.cumP[c.id]:null)).join('');
   const wdCell=editSid?`<td class="mut">${workingDaysInWeek(r.w,editSid)}</td>`:'';
   return`<tr><td>${fmt(r.w)}${r.w===CUR?' <span class="mut">(current)</span>':r.w===LAST?' <span class="mut">(last)</span>':''}</td>
@@ -269,12 +284,12 @@ function progressTable(sectionIds,label,fromWk,toWk){
   <td>${bal(r.due?r.cumTotalA-r.cumTotalP:null)}${canEdit?` <button class="sec" onclick="edRec='${K(editSid,r.w)}';render()">Edit</button> <button class="dng" onclick="deleteRecordAt('${editSid}','${r.w}')">Delete</button>`:''}</td></tr>`}).join('');
  const totPlan={},totAct={};cats.forEach(c=>{totPlan[c.id]=rows.reduce((s,r)=>s+r.ph[c.id],0);totAct[c.id]=rows.reduce((s,r)=>s+(r.due&&r.hasA?r.ah[c.id]:0),0)});
  const totBalCat=cats.map(c=>totAct[c.id]-totPlan[c.id]),totBal=totBalCat.reduce((s,v)=>s+v,0);
- const catHeadCells=cats.map(c=>`<th>Plan ${esc(c.name)}</th><th>Actual ${esc(c.name)}</th>`).join('');
- const balHeadCells=cats.map(c=>`<th>Balance (${esc(c.name)})</th>`).join('');
- const totRowCells=cats.map(c=>`<td>${totPlan[c.id].toFixed(1)} h</td><td style="color:${totAct[c.id]>=totPlan[c.id]?'var(--ok)':'var(--bad)'}">${totAct[c.id].toFixed(1)} h</td>`).join('');
+ const catHeadCells=cats.map(c=>`<th>Plan ${esc(c.name)} (h)</th><th>Actual ${esc(c.name)} (h)</th>`).join('');
+ const balHeadCells=cats.map(c=>`<th>Balance ${esc(c.name)} (h)</th>`).join('');
+ const totRowCells=cats.map(c=>`<td>${totPlan[c.id].toFixed(1)}</td><td style="color:${totAct[c.id]>=totPlan[c.id]?'var(--ok)':'var(--bad)'}">${totAct[c.id].toFixed(1)}</td>`).join('');
  const totBalRowCells=cats.map((c,i)=>bal(totBalCat[i])).join('');
  lastChartRows=rows;lastChartLabel=label;
- return`<div class="tw"><table><tr><th>Week</th>${editSid?'<th>Working Days</th>':''}${catHeadCells}<th>Status</th>${balHeadCells}<th>Balance (Total)${editSid?' / Actions':''}</th></tr>${trs}
+ return`<div class="tw"><table><tr><th>Week</th>${editSid?'<th>Working Days</th>':''}${catHeadCells}<th>Status</th>${balHeadCells}<th>Balance Total (h)${editSid?' / Actions':''}</th></tr>${trs}
  <tr style="font-weight:600;background:var(--bg)"><td>Total (${filtered?'shown weeks':'all weeks'})</td>${editSid?'<td></td>':''}${totRowCells}
  <td><span class="tag ${totBal>=0?'ok':'b'}">${totBal>=0?'On track':'Behind'}</span></td>${totBalRowCells}<td>${bal(totBal)}</td></tr></table></div>
  <div class="card"><canvas id="progChart" height="90"></canvas></div>
@@ -491,10 +506,12 @@ function monthGrid(monthKey,visibleFn,who){
  const cells=[];for(let i=0;i<dow;i++)cells.push('<div class="calday blank"></div>');
  for(let d=1;d<=days;d++){const ds=monthKey.slice(0,8)+String(d).padStart(2,'0'),hs=S.holidays.filter(h=>h.date===ds).filter(visibleFn),wo=new Date(ds+'T12:00:00').getDay()===S.weeklyOff;
   const g=hs.some(h=>h.sectionId==null),s=hs.some(h=>h.sectionId!=null);
-  cells.push(`<div class="calday ${wo?'wo':''}" onclick="dayClick('${ds}','${who}')" title="${wo?'Weekly off — ':''}${hs.map(h=>esc((h.sectionId?nm2('sections',h.sectionId):'All departments')+': '+h.label)).join(' | ')}"><div class="dn">${d}</div>${wo?'<div class="wolbl">Off</div>':''}${hs.length?`<div class="dots">${g?'<span class="dot g"></span>':''}${s?'<span class="dot s"></span>':''}</div>`:''}</div>`)}
+  const reasonTxt=hs.map(h=>h.label).join('; ');
+  const cls=g?'off-g':(s?'off-s':(wo?'wo':''));
+  cells.push(`<div class="calday ${cls}" onclick="dayClick('${ds}','${who}')" title="${wo?'Weekly off — ':''}${hs.map(h=>esc((h.sectionId?nm2('sections',h.sectionId):'All departments')+': '+h.label)).join(' | ')}"><div class="dn">${d}</div>${wo&&!hs.length?'<div class="wolbl">Off</div>':''}${hs.length?`<div class="reason">${esc(reasonTxt)}</div>`:''}</div>`)}
  while(cells.length%7)cells.push('<div class="calday blank"></div>');
  return`<div class="calgrid">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<div class="calhd">${d}</div>`).join('')}${cells.join('')}</div>
- <div class="legend"><span><span class="dot g"></span> All departments (admin)</span><span><span class="dot s"></span> Department-specific</span><span>Dashed = weekly off (${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][S.weeklyOff]})</span><span>Click a day to select its date below</span></div>`}
+ <div class="legend"><span><span class="swatch g"></span> All departments (admin)</span><span><span class="swatch s"></span> Department-specific</span><span>Dashed = weekly off (${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][S.weeklyOff]})</span><span>Click a day to select its date below</span></div>`}
 function dayClick(date,who){$('#h_date').value=date;const list=S.holidays.filter(h=>h.date===date).filter(who==='admin'?()=>true:h=>h.sectionId==null||S.sections.some(s=>s.id===h.sectionId&&s.headId===me.id));
  if(list.length)toast(list.map(h=>(h.sectionId?nm2('sections',h.sectionId):'All departments')+': '+h.label).join(' • '))}
 async function addGlobalHoliday(){const d=$('#h_date').value,l=$('#h_label').value.trim();
@@ -569,7 +586,7 @@ function adminHome(){const weeks=[];for(let w=iso(mon(S.termStart));w<=addW(CUR,
  const late=S.sections.filter(s=>{const x=status(s.id,LAST)[0];return x==='Actual pending'||x==='Not planned'}).length;
  const heads=S.users.filter(u=>u.role==='head'&&u.active);
  const statuses=['Completed','Shortfall','Actual pending','Planned','Not planned'];
- const catHeadCells=cats.map(c=>`<th>Plan ${esc(c.name)}</th><th>Actual ${esc(c.name)}</th>`).join('');
+ const catHeadCells=cats.map(c=>`<th>Plan ${esc(c.name)} (h)</th><th>Actual ${esc(c.name)} (h)</th>`).join('');
  if(!cats.length)return`<div class="al w">No Load Categories have been set up yet. Go to Admin \u2192 Load Categories to add at least one (e.g. Academic, CCPD Training) before heads can plan weekly load.</div>`;
  return`${late?`<div class="al b">${late} section(s) have not completed last week's (${fmt(LAST)}) entry.</div>`:'<div class="al g">All sections are up to date for last week.</div>'}
  <div class="card"><div class="row"><b>Week:</b><select onchange="ow=this.value;render()">${weeks.map(w=>`<option value="${w}" ${w===ow?'selected':''}>${fmt(w)}${w===CUR?' (This week)':w===LAST?' (Last week)':''}</option>`).join('')}</select><span class="mut">Unlock lets the head edit plan and actual for that section-week. Lock it again when done.</span></div>
