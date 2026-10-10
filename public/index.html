@@ -5,7 +5,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
 :root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
  --bg:#f4f5f3;--surface:#ffffff;--ink:#161c17;--mut:#5c6b60;--line:#dde3dc;
@@ -264,7 +264,8 @@ function progressTable(sectionIds,label,fromWk,toWk){
  if(!rows.length)return`<div class="al w">No weeks match this filter for ${esc(label)}.</div>`;
  const editSid=sectionIds.length===1?sectionIds[0]:null,cats=S.categories;
  const cell=(actual,planned,due,has)=>{if(!due||!has)return'<td class="mut">—</td>';const ok=actual>=planned;return`<td style="color:${ok?'var(--ok)':'var(--bad)'};font-weight:600">${actual.toFixed(1)}</td>`};
- const bal=v=>v==null?'<td class="mut">—</td>':`<td><b style="color:${v>=0?'var(--ok)':'var(--bad)'}">${(v>=0?'+':'')+v.toFixed(1)}</b></td>`;
+ const balInner=v=>v==null?'<span class="mut">—</span>':`<b style="color:${v>=0?'var(--ok)':'var(--bad)'}">${(v>=0?'+':'')+v.toFixed(1)}</b>`;
+ const bal=v=>`<td>${balInner(v)}</td>`;
  const trs=rows.map(r=>{
   if(editSid&&edRec===K(editSid,r.w)){
    const curP=(S.plans[K(editSid,r.w)]||{}).hours||{},curA=(S.actuals[K(editSid,r.w)]||{}).hours||{};
@@ -281,7 +282,7 @@ function progressTable(sectionIds,label,fromWk,toWk){
   ${planActCells}
   <td><span class="tag ${r.color}">${r.label}</span></td>
   ${balCells}
-  <td>${bal(r.due?r.cumTotalA-r.cumTotalP:null)}${canEdit?` <button class="sec" onclick="edRec='${K(editSid,r.w)}';render()">Edit</button> <button class="dng" onclick="deleteRecordAt('${editSid}','${r.w}')">Delete</button>`:''}</td></tr>`}).join('');
+  <td>${balInner(r.due?r.cumTotalA-r.cumTotalP:null)}${canEdit?`<br><button class="sec" onclick="edRec='${K(editSid,r.w)}';render()">Edit</button> <button class="dng" onclick="deleteRecordAt('${editSid}','${r.w}')">Delete</button>`:''}</td></tr>`}).join('');
  const totPlan={},totAct={};cats.forEach(c=>{totPlan[c.id]=rows.reduce((s,r)=>s+r.ph[c.id],0);totAct[c.id]=rows.reduce((s,r)=>s+(r.due&&r.hasA?r.ah[c.id]:0),0)});
  const totBalCat=cats.map(c=>totAct[c.id]-totPlan[c.id]),totBal=totBalCat.reduce((s,v)=>s+v,0);
  const catHeadCells=cats.map(c=>`<th>Plan ${esc(c.name)} (h)</th><th>Actual ${esc(c.name)} (h)</th>`).join('');
@@ -291,7 +292,7 @@ function progressTable(sectionIds,label,fromWk,toWk){
  lastChartRows=rows;lastChartLabel=label;
  return`<div class="tw"><table><tr><th>Week</th>${editSid?'<th>Working Days</th>':''}${catHeadCells}<th>Status</th>${balHeadCells}<th>Balance Total (h)${editSid?' / Actions':''}</th></tr>${trs}
  <tr style="font-weight:600;background:var(--bg)"><td>Total (${filtered?'shown weeks':'all weeks'})</td>${editSid?'<td></td>':''}${totRowCells}
- <td><span class="tag ${totBal>=0?'ok':'b'}">${totBal>=0?'On track':'Behind'}</span></td>${totBalRowCells}<td>${bal(totBal)}</td></tr></table></div>
+ <td><span class="tag ${totBal>=0?'ok':'b'}">${totBal>=0?'On track':'Behind'}</span></td>${totBalRowCells}<td>${balInner(totBal)}</td></tr></table></div>
  <div class="card"><canvas id="progChart" height="90"></canvas></div>
  ${editSid?'<p class="mut">Edit or delete a specific week\'s record directly above — useful for correcting bad backlog imports. Heads can only touch weeks they would normally be allowed to edit; admins can edit or delete any week.</p>':''}`}
 async function saveRecordAt(sid,w){const ph={},ah={};let phHas=false,ahHas=false,badRange=false;
@@ -514,15 +515,24 @@ function monthGrid(monthKey,visibleFn,who){
  <div class="legend"><span><span class="swatch g"></span> All departments (admin)</span><span><span class="swatch s"></span> Department-specific</span><span>Dashed = weekly off (${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][S.weeklyOff]})</span><span>Click a day to select its date below</span></div>`}
 function dayClick(date,who){$('#h_date').value=date;const list=S.holidays.filter(h=>h.date===date).filter(who==='admin'?()=>true:h=>h.sectionId==null||S.sections.some(s=>s.id===h.sectionId&&s.headId===me.id));
  if(list.length)toast(list.map(h=>(h.sectionId?nm2('sections',h.sectionId):'All departments')+': '+h.label).join(' • '))}
-async function addGlobalHoliday(){const d=$('#h_date').value,l=$('#h_label').value.trim();
- if(!d||!l)return toast('Select a date and enter a reason',1);
- if(S.holidays.some(h=>h.date===d&&h.sectionId==null))return toast('This date is already marked off for all departments',1);
- S.holidays.push({id:uid(),date:d,label:l,sectionId:null,by:me.id,ts:Date.now()});await save();toast('Marked as off day for all departments');$('#h_label').value='';render()}
-async function addSectionHoliday(){const mine=S.sections.filter(s=>s.headId===me.id);const sid=mine.length>1?$('#h_sec').value:mine[0]?.id;
- const d=$('#h_date').value,l=$('#h_label').value.trim();
- if(!sid)return toast('Select a section',1);if(!d||!l)return toast('Select a date and enter a reason',1);
- if(S.holidays.some(h=>h.date===d&&h.sectionId===sid))return toast('This date is already marked off for this section',1);
- S.holidays.push({id:uid(),date:d,label:l,sectionId:sid,by:me.id,ts:Date.now()});await save();toast('Marked as off day');$('#h_label').value='';render()}
+async function addHolidayRange(sectionId){
+ if(sectionId!==null&&!sectionId)return toast('Select a section',1);
+ const from=$('#h_date').value,to=$('#h_to').value||from,l=$('#h_label').value.trim();
+ if(!from||!l)return toast('Select a date and enter a reason',1);
+ if(to<from)return toast('The "To" date must be on or after the "From" date',1);
+ const start=new Date(from+'T12:00:00'),end=new Date(to+'T12:00:00');
+ const span=Math.round((end-start)/86400000)+1;
+ if(span>60)return toast('That range is over 60 days — please double-check the dates',1);
+ let added=0,skipExisting=0,skipWeekly=0;
+ for(let i=0;i<span;i++){const d=new Date(start);d.setDate(d.getDate()+i);const ds=iso(d);
+  if(d.getDay()===S.weeklyOff){skipWeekly++;continue}
+  if(S.holidays.some(h=>h.date===ds&&h.sectionId===sectionId)){skipExisting++;continue}
+  S.holidays.push({id:uid(),date:ds,label:l,sectionId,by:me.id,ts:Date.now()});added++}
+ if(!added)return toast('Nothing new to add — every day in that range is already marked, or is your weekly off day',1);
+ await save();
+ let msg=`Marked ${added} day${added===1?'':'s'} off`+(sectionId===null?' for all departments':'');
+ if(skipExisting||skipWeekly)msg+=` (skipped ${skipExisting} already marked, ${skipWeekly} on your weekly off day)`;
+ toast(msg);$('#h_label').value='';$('#h_to').value='';render()}
 async function delHoliday(id){const h=S.holidays.find(x=>x.id===id);if(!h)return;
  if(me.role!=='admin'){if(h.sectionId==null)return toast('Only admin can remove an all-department off day',1);const s=S.sections.find(x=>x.id===h.sectionId);if(!s||s.headId!==me.id)return toast('You can only remove off days for your own sections',1)}
  S.holidays=S.holidays.filter(x=>x.id!==id);await save();toast('Off day removed');render()}
@@ -540,7 +550,8 @@ function calendarV(){const adm=me.role==='admin';
   <div class="card"><div class="row"><b>Weekly off day (applies to all departments):</b><select onchange="setWeeklyOff(this.value)">${dn.map((n,i)=>`<option value="${i}" ${i==S.weeklyOff?'selected':''}>${n}</option>`).join('')}</select></div>
   <div class="row"><b>Term start (earliest week in dropdowns):</b><input type="date" id="ts_date" value="${S.termStart}"><button class="sec" onclick="setTermStart()">Save</button></div></div>
   <div class="card">${nav}${monthGrid(calMonth,()=>true,'admin')}</div>
-  <div class="card"><b>Mark an off day for all departments</b><div class="row"><input type="date" id="h_date"><input id="h_label" placeholder="Reason (e.g. Diwali, College Foundation Day)"><button onclick="addGlobalHoliday()">Mark off for all departments</button></div></div>
+  <div class="card"><b>Mark off day(s) for all departments</b><p class="mut">Leave "To" blank for a single day, or fill both for a range — e.g. a multi-day sessional exam or festival break.</p>
+  <div class="row">From <input type="date" id="h_date"> To (optional) <input type="date" id="h_to"><input id="h_label" placeholder="Reason (e.g. Diwali, Sessional Exam Week)"><button onclick="addHolidayRange(null)">Mark off day(s)</button></div></div>
   <div class="card"><b>All off days</b><div class="tw"><table><tr><th>Date</th><th>Reason</th><th>Scope</th><th></th></tr>${list.map(h=>edHol===h.id?
    `<tr><td><input type="date" id="eh_date" value="${h.date}"></td><td><input id="eh_label" value="${esc(h.label)}"></td><td>${h.sectionId?nm2('sections',h.sectionId):'<span class="tag ok">All departments</span>'}</td>
     <td><button onclick="saveEditHoliday('${h.id}')">Save</button> <button class="sec" onclick="edHol='';render()">Cancel</button></td></tr>`
@@ -552,7 +563,8 @@ function calendarV(){const adm=me.role==='admin';
  const vis=h=>h.sectionId==null||mine.some(s=>s.id===h.sectionId);
  return`<div class="al g">Every ${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][S.weeklyOff]} is off for all departments (set by admin). Mark event days or extra holidays for your section(s) below.</div>
  <div class="card">${nav}${monthGrid(calMonth,vis,'head')}</div>
- <div class="card"><b>Mark an off day for your section</b><div class="row">${mine.length>1?`<select id="h_sec">${mine.map(s=>`<option value="${s.id}">${secLabel(s)}</option>`).join('')}</select>`:''}<input type="date" id="h_date"><input id="h_label" placeholder="Reason (e.g. Sports Day, Seminar)"><button onclick="addSectionHoliday()">Mark off day</button></div></div>
+ <div class="card"><b>Mark off day(s) for your section</b><p class="mut">Leave "To" blank for a single day, or fill both for a range — e.g. a multi-day sessional exam.</p>
+ <div class="row">${mine.length>1?`<select id="h_sec">${mine.map(s=>`<option value="${s.id}">${secLabel(s)}</option>`).join('')}</select>`:''}From <input type="date" id="h_date"> To (optional) <input type="date" id="h_to"><input id="h_label" placeholder="Reason (e.g. Sports Day, Seminar)"><button onclick="addHolidayRange(${mine.length>1?"$('#h_sec').value":`'${mine[0].id}'`})">Mark off day(s)</button></div></div>
  <div class="card"><b>Your section off days</b><div class="tw"><table><tr><th>Date</th><th>Section</th><th>Reason</th><th></th></tr>${own.map(h=>edHol===h.id?
   `<tr><td><input type="date" id="eh_date" value="${h.date}"></td><td>${nm2('sections',h.sectionId)}</td><td><input id="eh_label" value="${esc(h.label)}"></td>
    <td><button onclick="saveEditHoliday('${h.id}')">Save</button> <button class="sec" onclick="edHol='';render()">Cancel</button></td></tr>`
