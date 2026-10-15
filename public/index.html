@@ -719,5 +719,9 @@ function lbV(){const ok=w=>isReasonableWeekKey(w)&&w<CUR&&(lbp==='all'||(lbp==='
  return`<div class="card"><div class="row"><b>Period:</b><select onchange="lbp=this.value;render()"><option value="last" ${lbp==='last'?'selected':''}>Last week</option><option value="4w" ${lbp==='4w'?'selected':''}>Last 4 weeks</option><option value="all" ${lbp==='all'?'selected':''}>All time</option></select>
  <span class="mut">Load covered = hours delivered (capped at plan) ÷ planned hours, Academic + Training. Missing entries count as 0. Ties are broken by submission rate.</span></div></div>
  ${tbl(heads,'Department Head ranking',adm)}${tbl(secs,'Section ranking',adm)}`}
+const IDLE_MS=60*60*1000; // auto-logout after 60 minutes of no activity
+let lastActivity=Date.now();
+['click','keydown','mousemove','touchstart','input'].forEach(ev=>document.addEventListener(ev,()=>{lastActivity=Date.now()},{passive:true}));
+setInterval(()=>{if(me&&Date.now()-lastActivity>IDLE_MS){logout();toast('Logged out after 60 minutes of inactivity — please log in again.',1)}},60000);
 boot();
 </script></body></html>
